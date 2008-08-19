@@ -1,3 +1,19 @@
+(*
+ * Copyright (C) 2006-2007 XenSource Ltd.
+ * Copyright (C) 2008      Citrix Ltd.
+ * Author Vincent Hanquez <vincent.hanquez@eu.citrix.com>
+ * Author Dave Scott <dave.scott@eu.citrix.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation; version 2.1 only. with the special
+ * exception on linking described in file LICENSE.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *)
 open Printf
 open Stringext
 open Hashtblext
@@ -61,13 +77,6 @@ let error_path_of_device ~xs (x: device) =
     (string_of_kind x.frontend.kind)
     x.frontend.devid
 
-(** Location of the backend error path *)
-let backend_error_path_of_device ~xs (x : device) =
-  sprintf "%s/error/backend/%s/%d"
-    (xs.Xs.getdomainpath x.backend.domid)
-    (string_of_kind x.backend.kind)
-    x.frontend.domid
-
 (** Written to by blkback/blktap when they have shutdown a device *)
 let backend_shutdown_done_path_of_device ~xs (x: device) = 
   sprintf "%s/shutdown-done" (backend_path_of_device ~xs x)
@@ -79,10 +88,6 @@ let backend_shutdown_request_path_of_device ~xs (x: device) =
 (** Path to write blkback/blktap pause requests to *)
 let backend_pause_request_path_of_device ~xs (x: device) = 
   sprintf "%s/pause" (backend_path_of_device ~xs x)
-
-(** Path to write blkback/blktap pause tokens to *)
-let backend_pause_token_path_of_device ~xs (x: device) = 
-  sprintf "%s/pause-token" (backend_path_of_device ~xs x)
 
 (** Path to write blkback/blktap pause done responses to *)
 let backend_pause_done_path_of_device ~xs (x: device) = 

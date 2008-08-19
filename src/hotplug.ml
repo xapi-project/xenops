@@ -1,3 +1,19 @@
+(*
+ * Copyright (C) 2006-2007 XenSource Ltd.
+ * Copyright (C) 2008      Citrix Ltd.
+ * Author Vincent Hanquez <vincent.hanquez@eu.citrix.com>
+ * Author Dave Scott <dave.scott@eu.citrix.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation; version 2.1 only. with the special
+ * exception on linking described in file LICENSE.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *)
 
 open Printf
 open Stringext
@@ -38,11 +54,7 @@ exception Loopdev_all_busy
    tree on boot. *)
 let private_path = "/xapi"
 
-(* The private data path is only used by xapi and ignored by frontend and backend *)
 let get_private_path domid = sprintf "%s/%d" private_path domid
-
-let get_private_data_path_of_device (x: device) = 
-	sprintf "%s/private/%s/%d" (get_private_path x.frontend.domid) (string_of_kind x.backend.kind) x.backend.devid
 
 (* Path in xenstore where we stuff our transient hotplug-related stuff *)
 let get_hotplug_path (x: device) =

@@ -1,3 +1,19 @@
+(*
+ * Copyright (C) 2006-2007 XenSource Ltd.
+ * Copyright (C) 2008      Citrix Ltd.
+ * Author Vincent Hanquez <vincent.hanquez@eu.citrix.com>
+ * Author Dave Scott <dave.scott@eu.citrix.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation; version 2.1 only. with the special
+ * exception on linking described in file LICENSE.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *)
 
 type kind = Vif | Vbd | Tap | Pci
 
@@ -23,13 +39,11 @@ val backend_path : xs:Xs.xsh -> endpoint -> Xc.domid -> string
 val backend_path_of_device : xs:Xs.xsh -> device -> string
 val frontend_path_of_device : xs:Xs.xsh -> device -> string
 val error_path_of_device : xs:Xs.xsh -> device -> string
-val backend_error_path_of_device : xs:Xs.xsh -> device -> string
 
 val backend_shutdown_request_path_of_device : xs:Xs.xsh -> device -> string
 val backend_shutdown_done_path_of_device : xs:Xs.xsh -> device -> string
 
 val backend_pause_request_path_of_device : xs:Xs.xsh -> device -> string
-val backend_pause_token_path_of_device : xs:Xs.xsh -> device -> string
 val backend_pause_done_path_of_device : xs:Xs.xsh -> device -> string
 
 val string_of_endpoint : endpoint -> string

@@ -1,3 +1,20 @@
+(*
+ * Copyright (C) 2006-2007 XenSource Ltd.
+ * Copyright (C) 2008      Citrix Ltd.
+ * Author Vincent Hanquez <vincent.hanquez@eu.citrix.com>
+ * Author Dave Scott <dave.scott@eu.citrix.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation; version 2.1 only. with the special
+ * exception on linking described in file LICENSE.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *)
+
 open Stringext
 open Printf
 
@@ -49,9 +66,9 @@ let parse_proc_xen_balloon () =
 (** by writing the target to XenStore. The value is automatically rounded down to *)
 (** the nearest page boundary.                                                    *)
 let set_memory_target ~xs domid mem_kib =
-	let mem_kib = Memory.round_kib_down_to_nearest_page_boundary mem_kib in
+	let mem_kib = Memory.round_down_to_nearest_page_boundary_kib mem_kib in
 	let dompath = xs.Xs.getdomainpath domid in
 	xs.Xs.write (dompath ^ "/memory/target") (Int64.to_string mem_kib);
 	(* Debugging information: *)
-	let mem_mib = Memory.mib_of_kib_used mem_kib in
+	let mem_mib = Memory.used_mib_of_kib mem_kib in
 	debug "domain %d set memory target to %Ld MiB" domid mem_mib;

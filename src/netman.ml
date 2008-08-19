@@ -1,35 +1,53 @@
 (*
- * Copyright (c) 2006 XenSource Inc.
- * Author Vincent Hanquez <vincent@xensource.com>
+ * Copyright (C) 2006-2007 XenSource Ltd.
+ * Copyright (C) 2008      Citrix Ltd.
+ * Author Vincent Hanquez <vincent.hanquez@eu.citrix.com>
+ * Author Dave Scott <dave.scott@eu.citrix.com>
  *
- * All rights reserved.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation; version 2.1 only. with the special
+ * exception on linking described in file LICENSE.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
  *)
-
 module D = Debug.Debugger(struct let name = "netman" end)
 open D
 
 
 type netty = Bridge of string | DriverDomain | Nat
 
+let log_exn_and_raise name f =
+	try f ()
+	with exn ->
+		warn "exception during %s: %s" name (Printexc.to_string exn);
+		raise exn
+
 let online vif netty =
 	match netty with
 	| Bridge bridgename ->
 		let setup_bridge_port dev =
-			Netdev.Link.down dev;
-			Netdev.Link.arp dev false;
-			Netdev.Link.multicast dev false;
-    			Netdev.Link.set_addr dev 
-			  (if(Xc.using_injection ()) then "fe:fe:fe:fe:fe:fe" else "fe:ff:ff:ff:ff:ff");
-			Netdev.Addr.flush dev
+			log_exn_and_raise "link.down" (fun () -> Netdev.Link.down dev);
+			log_exn_and_raise "link.arp" (fun () -> Netdev.Link.arp dev false);
+			log_exn_and_raise "link.multicast" (fun () -> Netdev.Link.multicast dev false);
+			log_exn_and_raise "link.set_addr" (fun () -> Netdev.Link.set_addr dev "fe:ff:ff:ff:ff:ff");
+			log_exn_and_raise "addr.flush" (fun () -> Netdev.Addr.flush dev);
 			in
 		let add_to_bridge br dev =
-			Netdev.Bridge.set_forward_delay br 0;
-			Netdev.Bridge.intf_add br dev;
-			Netdev.Link.up dev
+			log_exn_and_raise "bridge.set_forward_delay" (fun () -> Netdev.Bridge.set_forward_delay br 0);
+			log_exn_and_raise "bridge.intf_add" (fun () -> Netdev.Bridge.intf_add br dev);
+			log_exn_and_raise "link.up" (fun () -> Netdev.Link.up dev);
 			in
 		debug "Adding %s to bridge %s" vif bridgename;
-		setup_bridge_port vif;
-		add_to_bridge bridgename vif
+		begin try
+			setup_bridge_port vif;
+			add_to_bridge bridgename vif
+		with exn ->
+			warn "exception in netman.online ignoring: %s" (Printexc.to_string exn)
+		end;
 	| DriverDomain -> ()
 	| _ ->
 		failwith "not supported yet"
@@ -39,8 +57,8 @@ let offline vif netty =
 	| Bridge bridgename ->
 		debug "Removing %s from bridge %s" vif bridgename;
 		begin try
-			Netdev.Bridge.intf_del bridgename vif;
-			Netdev.Link.down vif
+			log_exn_and_raise "bridge.intf_del" (fun () -> Netdev.Bridge.intf_del bridgename vif);
+			log_exn_and_raise "link.down" (fun () -> Netdev.Link.down vif);
 		with _ ->
 			warn "interface %s already removed from bridge %s" vif bridgename;
 		end;

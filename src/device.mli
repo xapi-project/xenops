@@ -1,18 +1,35 @@
+(*
+ * Copyright (C) 2006-2007 XenSource Ltd.
+ * Copyright (C) 2008      Citrix Ltd.
+ * Author Vincent Hanquez <vincent.hanquez@eu.citrix.com>
+ * Author Dave Scott <dave.scott@eu.citrix.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation; version 2.1 only. with the special
+ * exception on linking described in file LICENSE.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *)
 open Device_common
 
 exception Ioemu_failed of string
 exception Ioemu_failed_dying
 
-exception Pause_failed
-exception Device_shutdown
-exception Pause_token_mismatch
-exception Device_not_paused
-exception Device_not_found
-
 module Generic :
 sig
 	val rm_device_state : xs:Xs.xsh -> device -> unit
-	val exists : xs:Xs.xsh -> device -> bool
+end
+
+module Tap2 :
+sig
+	exception Mount_failure of string * string * string
+
+	val mount : string -> string -> string
+	val unmount : string -> unit
 end
 
 module Vbd :
@@ -42,7 +59,6 @@ sig
 	       -> unpluggable:bool
 	       -> ?protocol:protocol
 	       -> ?extra_backend_keys:(string*string) list
-	       -> ?extra_private_keys:(string*string) list 
 	       -> ?backend_domid:Xc.domid
 	       -> Xc.domid -> device
 
@@ -54,16 +70,12 @@ sig
 	val media_is_ejected : xs:Xs.xsh -> virtpath:string -> int -> bool
 	val media_tray_is_locked : xs:Xs.xsh -> virtpath:string -> int -> bool
 
-	val pause : xs:Xs.xsh -> device -> string (* token *)
-	val unpause : xs:Xs.xsh -> device -> string (* token *) -> unit
-	val is_paused : xs:Xs.xsh -> device -> bool
+	val pause : xs:Xs.xsh -> device -> unit
+	val unpause : xs:Xs.xsh -> device -> unit
 
 	(* For migration: *)
 	val hard_shutdown_request : xs:Xs.xsh -> device -> unit
 	val hard_shutdown_complete : xs:Xs.xsh -> device -> string Watch.t
-
-	(* For testing: *)
-	val request_shutdown : xs:Xs.xsh -> device -> bool -> unit
 end
 
 module Vif :
@@ -72,9 +84,7 @@ sig
 
 	val add : xs:Xs.xsh -> devid:int -> netty:Netman.netty
 	       -> mac:string -> ?mtu:int -> ?rate:(int64 * int64) option
-	       -> ?protocol:protocol -> ?backend_domid:Xc.domid 
-	       -> ?other_config:((string * string) list) 
-	       -> ?extra_private_keys:(string * string) list -> Xc.domid
+	       -> ?protocol:protocol -> ?backend_domid:Xc.domid -> Xc.domid
 	       -> device
 	val plug : xs:Xs.xsh -> netty:Netman.netty
 	        -> mac:string -> ?mtu:int -> ?rate:(int64 * int64) option
@@ -140,17 +150,17 @@ sig
 
 	val start : xs:Xs.xsh -> dmpath:string -> memory:int64
 		 -> boot:string -> serial:string -> vcpus:int
-		 -> ?usb:string list -> ?nics:(string * string) list
+		 -> ?usb:string list -> ?nics:(string * string * string option) list
 	         -> ?acpi:bool -> disp:disp_opt -> ?pci_emulations:string list
 		 -> ?extras:(string * string option) list
-		 -> ?timeout:float -> Xc.domid
+	         -> ?power_mgmt:int -> ?oem_features:int -> ?timeout:float -> Xc.domid
 		 -> int
 	val restore : xs:Xs.xsh -> dmpath:string -> memory:int64
 		   -> boot:string -> serial:string -> vcpus:int
-		   -> ?usb:string list -> ?nics:(string * string) list
+		   -> ?usb:string list -> ?nics:(string * string * string option) list
 	           -> ?acpi:bool -> disp:disp_opt -> ?pci_emulations:string list
 		   -> ?extras:(string * string option) list
-		   -> ?timeout:float -> Xc.domid
+		   -> ?power_mgmt:int -> ?oem_features:int -> ?timeout:float -> Xc.domid
 		   -> int
 	val stop : xs:Xs.xsh -> Xc.domid -> int -> unit
 end

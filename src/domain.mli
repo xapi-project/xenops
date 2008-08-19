@@ -1,3 +1,19 @@
+(*
+ * Copyright (C) 2006-2007 XenSource Ltd.
+ * Copyright (C) 2008      Citrix Ltd.
+ * Author Vincent Hanquez <vincent.hanquez@eu.citrix.com>
+ * Author Dave Scott <dave.scott@eu.citrix.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation; version 2.1 only. with the special
+ * exception on linking described in file LICENSE.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *)
 (** High-level domain management functions *)
 
 open Device_common
@@ -17,9 +33,14 @@ type build_hvm_info = {
 	apic: bool;
 	acpi: bool;
 	nx: bool;
+	smbios_pt: bool;
+	acpi_pt: bool;
 	viridian: bool;
 	shadow_multiplier: float;
 	timeoffset: string;
+	timer_mode: int option;
+	hpet: int option;
+	vpt_align: int option;
 }
 
 type build_pv_info = {
@@ -96,8 +117,9 @@ val build_linux: xc: Xc.handle -> xs: Xs.xsh -> mem_max_kib:Int64.t
 val build_hvm: xc: Xc.handle -> xs: Xs.xsh -> mem_max_kib:Int64.t
             -> mem_target_kib:Int64.t -> shadow_multiplier:float
             -> vcpus:int -> kernel:string
-            -> pae:bool -> apic:bool -> acpi:bool -> nx:bool -> viridian:bool
-            -> timeoffset:string -> domid
+            -> pae:bool -> apic:bool -> acpi:bool -> nx:bool
+            -> smbios_pt:bool -> acpi_pt:bool -> viridian:bool
+            -> timeoffset:string -> timer_mode:int option -> hpet:int option -> vpt_align:int option -> domid
             -> domarch
 
 (** Restore a domain using the info provided *)
@@ -116,6 +138,7 @@ val restore: xc: Xc.handle -> xs: Xs.xsh -> mem_max_kib:Int64.t
 val hvm_restore: xc: Xc.handle -> xs: Xs.xsh -> mem_max_kib:Int64.t
              -> mem_target_kib:Int64.t -> shadow_multiplier:float
              -> vcpus:int -> pae:bool -> viridian:bool -> timeoffset:string
+             -> timer_mode:int option -> hpet:int option -> vpt_align: int option
              -> domid -> Unix.file_descr
              -> unit
 
@@ -169,9 +192,6 @@ val del_irq: xc: Xc.handle -> domid -> int -> unit
 
 (** Restrict a domain to a maximum machine address width *)
 val set_machine_address_size: xc: Xc.handle -> domid -> int option -> unit
-
-(** Suppress spurious page faults for this domain *)
-val suppress_spurious_page_faults: xc: Xc.handle -> domid -> unit
 
 (** CPUID related functions *)
 type cpuid_reg = Eax | Ebx | Ecx | Edx

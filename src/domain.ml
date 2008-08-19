@@ -1,5 +1,19 @@
-(** Functions relating to Xen domains *)
-
+(*
+ * Copyright (C) 2006-2007 XenSource Ltd.
+ * Copyright (C) 2008      Citrix Ltd.
+ * Author Vincent Hanquez <vincent.hanquez@eu.citrix.com>
+ * Author Dave Scott <dave.scott@eu.citrix.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation; version 2.1 only. with the special
+ * exception on linking described in file LICENSE.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *)
 open Printf
 open Stringext
 open Listext
@@ -15,9 +29,14 @@ type build_hvm_info = {
 	apic: bool;
 	acpi: bool;
 	nx: bool;
+	smbios_pt: bool;
+	acpi_pt: bool;
 	viridian: bool;
 	shadow_multiplier: float;
 	timeoffset: string;
+	timer_mode: int option;
+	hpet: int option;
+	vpt_align: int option;
 }
 
 type build_pv_info = {
@@ -47,6 +66,7 @@ exception Timeout_backend
 exception Could_not_read_file of string (* eg linux kernel/ initrd *)
 exception Domain_stuck_in_dying_state of Xc.domid
 
+let xend_save_signature = "LinuxGuestRecord"
 let save_signature = "XenSavedDomain\n"
 let qemu_save_signature = "QemuDeviceModelRecord\n"
 let hvmloader = "/usr/lib/xen/boot/hvmloader"
@@ -134,8 +154,6 @@ let make ~xc ~xs ~hvm ?(name="") ?(xsdata=[]) ?(platformdata=[]) uuid =
 		xs.Xs.writev dom_path xsdata;
 		xs.Xs.writev dom_path (List.map (fun (k,v) ->
 			("platform/" ^ k, v)) platformdata);
-
-		xs.Xs.write (dom_path ^ "/control/platform-feature-multiprocessor-suspend") "1";
 
 		debug "Created domain with id: %d" domid;
 		domid
@@ -316,7 +334,7 @@ let destroy ?(preserve_xs_vm=false) ~xc ~xs domid =
 	let start = Unix.gettimeofday () in
 	let timeout = 30. in
 	while still_exists () && (Unix.gettimeofday () -. start < timeout) do
-	  Thread.delay 5.
+	  Unix.sleep 5
 	done;
 	if still_exists () then begin
 	  (* CA-13801: to avoid confusing people, we shall change this domain's uuid *)
@@ -340,15 +358,16 @@ let create_channels ~xc domid =
 	store, console
 
 (* pre build *)
-let build_pre ~xc ~xs ~vcpus ~mem_max_kib ~shadow_kib domid =
+let build_pre ~xc ~xs ~vcpus ~mem_max_kib ~shadow_kib ~timer_mode ~hpet ~vpt_align domid =
 	let shadow_mib = Int64.to_int (Int64.div shadow_kib 1024L) in
 	debug "build_pre domid=%d; mem=%Lu KiB; shadow=%Lu KiB (%d MiB)"
 	      domid mem_max_kib shadow_kib shadow_mib;
-	let dom_path = xs.Xs.getdomainpath domid in
-	let use_vmxassist =
-	  try bool_of_string (xs.Xs.read (dom_path ^ "/platform/vmxassist"))
-	  with _ -> false in
-	Xc.domain_setvmxassist xc domid use_vmxassist;
+	let maybe_exn_ign name f opt =
+		maybe (fun opt -> try f opt with exn -> warn "exception setting %s: %s" name (Printexc.to_string exn)) opt
+		in
+	maybe_exn_ign "timer mode" (fun mode -> Xc.domain_set_timer_mode xc domid mode) timer_mode;
+	maybe_exn_ign "hpet" (fun hpet -> Xc.domain_set_hpet xc domid hpet) hpet;
+	maybe_exn_ign "vpt align" (fun vpt_align -> Xc.domain_set_vpt_align xc domid vpt_align) vpt_align;
 	Xc.domain_max_vcpus xc domid vcpus;
 	Xc.domain_setmaxmem xc domid mem_max_kib;
 	Xc.domain_set_memmap_limit xc domid mem_max_kib;
@@ -396,7 +415,7 @@ let build_linux ~xc ~xs ~mem_max_kib ~mem_target_kib ~kernel ~cmdline ~ramdisk ~
 	let mem_max_kib' = Memory.Linux.required_available mem_max_kib in
 
 	let store_port, console_port =
-		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib:0L ~vcpus domid in
+		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib:0L ~vcpus ~timer_mode:None ~hpet:None ~vpt_align:None domid in
 
 	let mem_target_mib = (Int64.to_int (Int64.div mem_target_kib 1024L)) in
 	let cnx = XenguestHelper.connect
@@ -438,7 +457,8 @@ let build_linux ~xc ~xs ~mem_max_kib ~mem_target_kib ~kernel ~cmdline ~ramdisk ~
 
 (** build hvm type of domain *)
 let build_hvm ~xc ~xs ~mem_max_kib ~mem_target_kib ~shadow_multiplier ~vcpus
-              ~kernel ~pae ~apic ~acpi ~nx ~viridian ~timeoffset domid =
+              ~kernel ~pae ~apic ~acpi ~nx ~smbios_pt ~acpi_pt ~viridian ~timeoffset
+	      ~timer_mode ~hpet ~vpt_align domid =
 	assert_file_is_readable kernel;
 
 	(* NB we reserve a little extra *)
@@ -448,7 +468,7 @@ let build_hvm ~xc ~xs ~mem_max_kib ~mem_target_kib ~shadow_multiplier ~vcpus
 	let shadow_kib = max 1024L shadow_kib in
 
 	let store_port, console_port =
-		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib ~vcpus domid in
+		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib ~vcpus ~timer_mode ~hpet ~vpt_align domid in
 
 	let mem_max_mib = (Int64.to_int (Int64.div mem_max_kib 1024L)) in
 
@@ -464,6 +484,8 @@ let build_hvm ~xc ~xs ~mem_max_kib ~mem_target_kib ~shadow_multiplier ~vcpus
 	    "-apic"; string_of_bool apic;
 	    "-acpi"; string_of_bool acpi;
 	    "-nx"; string_of_bool nx;
+	    "-smbios_pt"; string_of_bool smbios_pt;
+	    "-acpi_pt"; string_of_bool acpi_pt;
 	    "-viridian"; string_of_bool viridian;
 	    "-fork"; "true";
 	  ] [] in
@@ -500,19 +522,43 @@ let build ~xc ~xs info domid =
 		build_hvm ~xc ~xs ~mem_max_kib:info.memory_max ~mem_target_kib:info.memory_target
 		          ~shadow_multiplier:hvminfo.shadow_multiplier ~vcpus:info.vcpus
 		          ~kernel:info.kernel ~pae:hvminfo.pae ~apic:hvminfo.apic ~acpi:hvminfo.acpi
-		          ~nx:hvminfo.nx ~viridian:hvminfo.viridian ~timeoffset:hvminfo.timeoffset domid
+		          ~nx:hvminfo.nx ~smbios_pt:hvminfo.smbios_pt ~acpi_pt:hvminfo.acpi_pt ~viridian:hvminfo.viridian ~timeoffset:hvminfo.timeoffset
+		          ~timer_mode:hvminfo.timer_mode ~hpet:hvminfo.hpet ~vpt_align:hvminfo.vpt_align domid
 	| BuildPV pvinfo   ->
 		build_linux ~xc ~xs ~mem_max_kib:info.memory_max ~mem_target_kib:info.memory_target
 		            ~kernel:info.kernel ~cmdline:pvinfo.cmdline ~ramdisk:pvinfo.ramdisk
 		            ~vcpus:info.vcpus domid
+
+let read_signature fd =
+	let l_new_sig = String.length save_signature in
+	let l_leg_sig = String.length xend_save_signature in
+	let minlen = min l_new_sig l_leg_sig in
+
+	let s = Io.read fd minlen in
+	let end_to_read, oldformat =
+		if String.startswith s save_signature then (
+			String.sub save_signature minlen (l_new_sig - minlen), false
+		) else if String.startswith s xend_save_signature then
+			String.sub qemu_save_signature minlen (l_leg_sig - minlen), true
+		else
+			raise Restore_signature_mismatch;
+		in
+	if end_to_read <> "" then (
+		if Io.read fd (String.length end_to_read) <> end_to_read then
+			raise Restore_signature_mismatch;
+	);
+	oldformat
 
 (* restore a domain from a file descriptor. it read first the signature
  * to be we are not trying to restore from random data.
  * the linux_restore process is in charge to allocate memory as it's needed
  *)
 let restore_common ~xc ~xs ~hvm ~store_port ~console_port ~vcpus ~extras domid fd =
-	if Io.read fd (String.length save_signature) <> save_signature then
-		raise Restore_signature_mismatch;
+	let oldformat = read_signature fd in
+	if oldformat then (
+		let cfglen = Io.read_int fd in
+		ignore (Io.read fd cfglen)
+	);
 
 	Unix.clear_close_on_exec fd;
 	let cnx = XenguestHelper.connect
@@ -537,6 +583,12 @@ let restore_common ~xc ~xs ~hvm ~store_port ~console_port ~vcpus ~extras domid f
 		in
 
 	if hvm then (
+		let qemu_save_signature =
+			if oldformat then
+				String.sub qemu_save_signature 0 (String.length qemu_save_signature - 1)
+			else
+				qemu_save_signature
+			in
 		(* restore qemu-dm tmp file *)
 		if Io.read fd (String.length qemu_save_signature) <> qemu_save_signature then
 			raise Restore_signature_mismatch;
@@ -580,7 +632,7 @@ let restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~vcpus domid fd =
 	let mem_max_kib' = Memory.Linux.required_available mem_max_kib in
 
 	let store_port, console_port =
-	        build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib:0L ~vcpus domid in
+	        build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib:0L ~vcpus ~timer_mode:None ~hpet:None ~vpt_align:None domid in
 
 	let store_mfn, console_mfn = restore_common ~xc ~xs ~hvm:false
 	                                            ~store_port ~console_port
@@ -592,12 +644,13 @@ let restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~vcpus domid fd =
 	] in
 	build_post ~xc ~xs ~vcpus ~mem_target_kib ~mem_max_kib domid store_mfn store_port local_stuff []
 
-let hvm_restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~shadow_multiplier ~vcpus ~pae ~viridian ~timeoffset domid fd =
+let hvm_restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~shadow_multiplier ~vcpus ~pae ~viridian
+	        ~timeoffset ~timer_mode ~hpet ~vpt_align domid fd =
 	let shadow_kib = Memory.HVM.required_shadow vcpus mem_max_kib shadow_multiplier
 	and mem_max_kib' = Memory.HVM.required_available mem_max_kib in
 
 	let store_port, console_port =
-		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib ~vcpus domid in
+		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib ~vcpus ~timer_mode ~hpet ~vpt_align domid in
 	let extras = [
 		"-pae"; string_of_bool pae;
 		"-viridian"; string_of_bool viridian;
@@ -695,6 +748,12 @@ let suspend ~xc ~xs ~hvm domid fd flags ?(progress_callback = fun _ -> ()) do_su
 	if hvm then (
 		Io.write fd qemu_save_signature;
 		let file = sprintf "/tmp/xen.qemu-dm.%d" domid in
+		let file =
+			if Sys.file_exists file then
+				file
+			else
+				sprintf "/var/lib/xen/qemu-save.%d" domid
+			in
 		let fd2 = Unix.openfile file [ Unix.O_RDONLY ] 0o640 in
 		let size = (Unix.stat file).Unix.st_size in
 		debug "qemu-dm state file size: %d" size;
@@ -798,10 +857,6 @@ let set_machine_address_size ~xc domid width =
 	Xc.domain_set_machine_address_size xc domid width
 	  end
     | None -> ()
-
-let suppress_spurious_page_faults ~xc domid =
-  debug "suppress spurious page faults for dom%d" domid;
-  Xc.domain_suppress_spurious_page_faults xc domid
 
 type cpuid_reg = Eax | Ebx | Ecx | Edx
 type cpuid_rtype = Clear | Set | Default | Same | Keep

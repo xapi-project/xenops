@@ -1,77 +1,70 @@
-(** Functions relating to memory requirements of Xen domains *)
+(*
+ * Copyright (C) 2006-2007 XenSource Ltd.
+ * Copyright (C) 2008      Citrix Ltd.
+ * Author Vincent Hanquez <vincent.hanquez@eu.citrix.com>
+ * Author Dave Scott <dave.scott@eu.citrix.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published
+ * by the Free Software Foundation; version 2.1 only. with the special
+ * exception on linking described in file LICENSE.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *)
 
 open Printf
 
 module D = Debug.Debugger(struct let name = "xenops" end)
 open D
 
-let ( +++ ) = Int64.add
-let ( --- ) = Int64.sub
-let ( *** ) = Int64.mul
-let ( /// ) = Int64.div
-
-(* === Host memory properties === **)
+let one_page_kib = 4
 
 let get_free_memory_kib ~xc =
 	Xc.pages_to_kib (Int64.of_nativeint (Xc.physinfo xc).Xc.free_pages)
-let get_scrub_memory_kib ~xc =
-	Xc.pages_to_kib (Int64.of_nativeint (Xc.physinfo xc).Xc.scrub_pages)
+
+(** Returns the total amount of memory available in this host. *)
 let get_total_memory_mib ~xc =
 	Xc.pages_to_mib (Int64.of_nativeint ((Xc.physinfo xc).Xc.total_pages))
 
-let bytes_per_kib  = 1024L
-let bytes_per_mib  = 1048576L
-let bytes_per_page = Int64.of_int (Mmap.getpagesize ())
-let kib_per_page   = bytes_per_page /// bytes_per_kib
-let kib_per_mib    = 1024L
-let pages_per_mib  = bytes_per_mib /// bytes_per_page
+(** Gets the current page size (in bytes). *)
+let get_page_size_bytes () =
+	Int64.of_int (Mmap.getpagesize ())
 
-(* === Arithmetic rounding functions === **)
+(** Gets the current page size (in kib). *)
+let get_page_size_kib () =
+	Int64.div (get_page_size_bytes ()) 1024L
 
+(** For the given values x and y, calculates the greatest *)
+(** value x' <= x, such that x' is evenly divisible by y. *)
 let round_down_to_multiple_of x y =
-	(x /// y) *** y
+	Int64.mul (Int64.div x y) y
 
-let round_up_to_multiple_of x y =
-	((x +++ y --- 1L) /// y) *** y
+(** Rounds down the given value (in bytes) to the nearest page boundary. *)
+let round_down_to_nearest_page_boundary_bytes value =
+	round_down_to_multiple_of value (get_page_size_bytes ())
+(** Rounds down the given value (in kib) to the nearest page boundary. *)
+let round_down_to_nearest_page_boundary_kib value =
+	round_down_to_multiple_of value (get_page_size_kib ())
 
-(* === Memory rounding functions === **)
+(** Converts the given free memory value from bytes to kib. *)
+let free_kib_of_bytes value = Int64.div value 1024L
+(** Converts the given free memory value from bytes to kib. *)
+let free_mib_of_kib value = Int64.div value 1024L
 
-let round_bytes_down_to_nearest_page_boundary value = round_down_to_multiple_of value bytes_per_page
-let round_bytes_down_to_nearest_mib           value = round_down_to_multiple_of value bytes_per_mib
-let round_kib_down_to_nearest_page_boundary   value = round_down_to_multiple_of value kib_per_page
-let round_kib_up_to_nearest_page_boundary     value = round_up_to_multiple_of value kib_per_page
-let round_kib_up_to_nearest_mib               value = round_up_to_multiple_of value kib_per_mib
+(** Converts the given used memory value from bytes to kib. *)
+let used_kib_of_bytes value = Int64.div (Int64.add value 1023L) 1024L
+(** Converts the given used memory value from bytes to kib. *)
+let used_mib_of_kib value = Int64.div (Int64.add value 1023L) 1024L
 
-(* === Division functions === *)
-
-let divide_rounding_down numerator denominator =
-	numerator /// denominator
-
-let divide_rounding_up numerator denominator =
-	(numerator +++ denominator --- 1L) /// denominator
-
-(* === Memory unit conversion functions === **)
-
-let bytes_of_kib   value = value *** bytes_per_kib
-let bytes_of_pages value = value *** bytes_per_page
-let bytes_of_mib   value = value *** bytes_per_mib
-let kib_of_mib     value = value *** kib_per_mib
-let kib_of_pages   value = value *** kib_per_page
-let pages_of_mib   value = value *** pages_per_mib
-
-let kib_of_bytes_free   value = divide_rounding_down value bytes_per_kib
-let pages_of_bytes_free value = divide_rounding_down value bytes_per_page
-let pages_of_kib_free   value = divide_rounding_down value kib_per_page
-let mib_of_bytes_free   value = divide_rounding_down value bytes_per_mib
-let mib_of_kib_free     value = divide_rounding_down value kib_per_mib
-let mib_of_pages_free   value = divide_rounding_down value pages_per_mib
-
-let kib_of_bytes_used   value = divide_rounding_up value bytes_per_kib
-let pages_of_bytes_used value = divide_rounding_up value bytes_per_page
-let pages_of_kib_used   value = divide_rounding_up value kib_per_page
-let mib_of_bytes_used   value = divide_rounding_up value bytes_per_mib
-let mib_of_kib_used     value = divide_rounding_up value kib_per_mib
-let mib_of_pages_used   value = divide_rounding_up value pages_per_mib
+(** Converts the given memory value from bytes to kib. *)
+let bytes_of_kib value = Int64.mul value 1024L
+(** Converts the given memory value from bytes to kib. *)
+let bytes_of_mib value = Int64.mul value 1048576L
+(** Converts the given memory value from mib to kib. *)
+let kib_of_mib value = Int64.mul value 1024L
 
 (** See the calculations in tools/python/xen/xend *)
 module HVM = struct
@@ -82,26 +75,31 @@ module HVM = struct
 		 * 2.4 KiB overhead per 1 MiB RAM
 		 * + 4 MiB to avoid running out of memory altogether *)
 		let extra_kib = 2.4 *. (Int64.to_float kib /. 1024.) +. 4096. in
-		let extra_kib = Int64.of_float extra_kib in
-		kib +++ (round_kib_up_to_nearest_page_boundary extra_kib)
+		(* round up to the nearest page *)
+		let one_page_kib = float_of_int one_page_kib in
+		let extra_kib = Int64.of_float (ceil (extra_kib /. one_page_kib) *. one_page_kib) in
+		Int64.add kib extra_kib
 
 	(** See image.py:getRequiredAvailableMemory *)
 	let required_available = required_initial_reservation
 
 	(** Shadow memory needed by the domain.
 	    See image.py:getRequiredShadowMemory. *)
-	let required_shadow vcpu_count max_kib multiplier =
+	let required_shadow vcpus max_kib multiplier =
 		(* add extra overheads *)
-		let initial_kib = required_initial_reservation max_kib in
-		let initial_mib = mib_of_kib_used initial_kib in
+		let kib = required_initial_reservation max_kib in
+		let mib = int_of_float (ceil (Int64.to_float kib /. 1024.)) in
+
 		(* Apparently we need the following shadow allocation: *)
-		let vcpu_pages = 256L *** (Int64.of_int vcpu_count) in
-		let p2m_map_pages = initial_mib in
-		let shadow_resident_pages = initial_mib in
-		let kib = kib_of_pages (vcpu_pages +++ p2m_map_pages +++ shadow_resident_pages) in
+		let vcpu_pages = 256 * vcpus in
+		let for_p2m_map = mib in
+		let shadow_resident_processes = mib in
+		let kib = one_page_kib * (vcpu_pages + for_p2m_map + shadow_resident_processes) in
 		(* NB: the Xen default is lower than this but is for safety, not performance *)
-		let kib = round_kib_up_to_nearest_mib kib in
-		Int64.of_float ((Int64.to_float kib) *. multiplier)
+		(* round up to next MiB *)
+		let kib = (kib + 1023) / 1024 * 1024 in
+		let result = Int64.of_float (float_of_int kib *. multiplier) in
+		result
 
 	let round_shadow_multiplier vcpus kib requested domid = 
 	  let mib_from_kib kib = Int64.to_int (Int64.div kib 1024L) in
@@ -131,30 +129,16 @@ let required_to_boot hvm vcpus mem_kib mem_target_kib shadow_multiplier =
 		mem_target_kib
 	)
 
-(** Returns true if (and only if) the   *)
-(** specified argument is a power of 2. *)
-let is_power_of_2 n =
-	(n > 0) && (n land (0 - n) = n)
-
-let wait_xen_free_mem ~xc ?(maximum_wait_time_seconds=256) requested_memory_kib =
-	let rec wait accumulated_wait_time_seconds =
-		let free_memory_kib = get_free_memory_kib ~xc in
-		let scrub_memory_kib = get_scrub_memory_kib ~xc in
-		(* At exponentially increasing intervals, write  *)
-		(* a debug message saying how long we've waited: *)
-		if is_power_of_2 accumulated_wait_time_seconds then
-			debug "Waited %i second(s) for memory to become available: %Ld free, %Ld scrub, %Ld requested"
-				accumulated_wait_time_seconds free_memory_kib scrub_memory_kib requested_memory_kib;
-		if free_memory_kib >= requested_memory_kib
-		then true
-		else begin
-			(* Give up if we've already waited the maximum amount of time. *)
-			if accumulated_wait_time_seconds >= maximum_wait_time_seconds
-			then false
-			else begin
-				Thread.delay 1.0;
-				wait (accumulated_wait_time_seconds + 1)
-			end
-		end
-	in
-	wait 0
+let wait_xen_free_mem ~xc ?(max_attempts=10) ?(waiting_time_per_attempt=1) requested_kib =
+	let attempt_left = ref max_attempts and success = ref false in
+	while !attempt_left > 0 && not !success
+	do
+		let free_mem_kib = get_free_memory_kib ~xc in
+		if free_mem_kib >= requested_kib then
+			success := true
+		else (
+			decr attempt_left;
+			Unix.sleep waiting_time_per_attempt
+		)
+	done;
+	!success = true
