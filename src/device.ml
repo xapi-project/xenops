@@ -1072,8 +1072,11 @@ let __start ~xs ~dmpath ~memory ~boot ~serial ~vcpus ?(usb=[]) ?(nics=[])
 	) nics in
 	let qemu_pid_path = xs.Xs.getdomainpath domid ^ "/qemu-pid" in
 
-	if power_mgmt <> 0 then
-		xs.Xs.write (power_mgmt_path domid) (string_of_int power_mgmt);
+        if power_mgmt <> 0 then begin
+                try if (Unix.stat "/proc/acpi/battery").Unix.st_kind == Unix.S_DIR then
+                                xs.Xs.write (power_mgmt_path domid) (string_of_int power_mgmt);
+                with _ -> () ;
+        end;
 
         if oem_features <> 0 then
                 xs.Xs.write (oem_features_path domid) (string_of_int oem_features);
