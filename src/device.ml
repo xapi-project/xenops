@@ -930,7 +930,7 @@ let bind pcidevs =
 		in
 	List.iter (fun (domain, bus, slot, func) ->
 		let devstr = sprintf "%.4x:%.2x:%.2x.%.1x" domain bus slot func in
-		let s = "/sys/bus/pci/devices/%s" ^ devstr in
+		let s = "/sys/bus/pci/devices/" ^ devstr in
 		let driver =
 			try Some (Filename.basename (Unix.readlink (s ^ "/driver")))
 			with _ -> None in
