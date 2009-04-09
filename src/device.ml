@@ -917,16 +917,21 @@ let release ~xc ~xs ~hvm pcidevs domid devid =
 	) pcidevs;
 	()
 
+let write_string_to_file file s =
+	let fn_write_string fd = Unixext.really_write fd s 0 (String.length s) in
+	Unixext.with_file file [ Unix.O_WRONLY ] 0o640 fn_write_string
+
+let do_flr device =
+	let doflr = "/sys/bus/pci/drivers/pciback/do_flr" in
+	try write_string_to_file doflr device with _ -> ()
+
 let bind pcidevs =
-	let write_string_to_file file s =
-		let fn_write_string fd = Unixext.really_write fd s 0 (String.length s) in
-		Unixext.with_file file [ Unix.O_WRONLY ] 0o640 fn_write_string
-		in
 	let bind_to_pciback device =
 		let newslot = "/sys/bus/pci/drivers/pciback/new_slot" in
-		let bind =  "/sys/bus/pci/drivers/pciback/bind" in
+		let bind = "/sys/bus/pci/drivers/pciback/bind" in
 		write_string_to_file newslot device;
 		write_string_to_file bind device;
+		do_flr device;
 		in
 	List.iter (fun (domain, bus, slot, func) ->
 		let devstr = sprintf "%.4x:%.2x:%.2x.%.1x" domain bus slot func in
@@ -948,8 +953,7 @@ let bind pcidevs =
 	) pcidevs;
 	()
 
-let clean_shutdown ~xs (x: device) =
-	debug "Device.Pci.clean_shutdown %s" (string_of_device x);
+let enumerate_devs ~xs (x: device) =
 	let backend_path = backend_path_of_device ~xs x in
 	let num =
 		try int_of_string (xs.Xs.read (backend_path ^ "/num_devs"))
@@ -965,12 +969,24 @@ let clean_shutdown ~xs (x: device) =
 		with _ ->
 			()
 	done;
-	let devs =
-		List.rev (List.fold_left (fun acc dev ->
-			match dev with
-			| None -> acc
-			| Some dev -> dev :: acc
-		) [] (Array.to_list devs)) in
+	List.rev (List.fold_left (fun acc dev ->
+		match dev with
+		| None -> acc
+		| Some dev -> dev :: acc
+	) [] (Array.to_list devs))
+
+let reset ~xs (x: device) =
+	debug "Device.Pci.reset %s" (string_of_device x);
+	let pcidevs = enumerate_devs ~xs x in
+	List.iter (fun (domain, bus, slot, func) ->
+		let devstr = sprintf "%.4x:%.2x:%.2x.%.1x" domain bus slot func in
+		do_flr devstr
+	) pcidevs;
+	()
+
+let clean_shutdown ~xs (x: device) =
+	debug "Device.Pci.clean_shutdown %s" (string_of_device x);
+	let devs = enumerate_devs ~xs x in
 	Xc.with_intf (fun xc ->
 		let hvm =
 			try (Xc.domain_getinfo xc x.frontend.domid).Xc.hvm_guest

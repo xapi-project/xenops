@@ -262,6 +262,10 @@ let destroy ?(preserve_xs_vm=false) ~xc ~xs domid =
 	debug "Domain.destroy: all known devices = [ %a ]" (fun () -> String.concat "; ")
           (List.map string_of_device all_devices);
 
+	(* reset PCI devices before xc.domain_destroy otherwise we lot all IOMMU mapping *)
+	let all_pci_devices = List.filter (fun device -> device.backend.kind = Pci) all_devices in
+	List.iter (fun pcidev -> Device.PCI.reset ~xs pcidev) all_pci_devices;
+
 	(* Now we should kill the domain itself *)
 	debug "Domain.destroy calling Xc.domain_destroy (domid %d)" domid;
 	log_exn_continue "Xc.domain_destroy" (Xc.domain_destroy xc) domid;
