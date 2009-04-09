@@ -925,8 +925,11 @@ let bind pcidevs =
 	let bind_to_pciback device =
 		let newslot = "/sys/bus/pci/drivers/pciback/new_slot" in
 		let bind =  "/sys/bus/pci/drivers/pciback/bind" in
+		let doflr =  "/sys/bus/pci/drivers/pciback/do_flr" in
 		write_string_to_file newslot device;
 		write_string_to_file bind device;
+		try write_string_to_file doflr device
+		with _ -> ()
 		in
 	List.iter (fun (domain, bus, slot, func) ->
 		let devstr = sprintf "%.4x:%.2x:%.2x.%.1x" domain bus slot func in
