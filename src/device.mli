@@ -130,6 +130,7 @@ sig
 	       -> (int * int * int * int) list -> Xc.domid -> int -> unit
 	val release : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool
 	       -> (int * int * int * int) list -> Xc.domid -> int -> unit
+	val reset : xs:Xs.xsh -> device -> unit
 	val bind : (int * int * int * int) list -> unit
 end
 
