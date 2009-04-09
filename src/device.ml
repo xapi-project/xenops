@@ -917,11 +917,11 @@ let release ~xc ~xs ~hvm pcidevs domid devid =
 	) pcidevs;
 	()
 
+let write_string_to_file file s =
+	let fn_write_string fd = Unixext.really_write fd s 0 (String.length s) in
+	Unixext.with_file file [ Unix.O_WRONLY ] 0o640 fn_write_string
+
 let bind pcidevs =
-	let write_string_to_file file s =
-		let fn_write_string fd = Unixext.really_write fd s 0 (String.length s) in
-		Unixext.with_file file [ Unix.O_WRONLY ] 0o640 fn_write_string
-		in
 	let bind_to_pciback device =
 		let newslot = "/sys/bus/pci/drivers/pciback/new_slot" in
 		let bind =  "/sys/bus/pci/drivers/pciback/bind" in
