@@ -632,7 +632,7 @@ let resume ~xc ~xs ~cooperative domid =
 		debug "Read [%s]" line;
 	)
 
-let restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~vcpus domid fd =
+let pv_restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~vcpus domid fd =
 	let mem_max_kib' = Memory.Linux.required_available mem_max_kib in
 
 	let store_port, console_port =
