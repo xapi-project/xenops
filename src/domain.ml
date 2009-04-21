@@ -632,7 +632,7 @@ let resume ~xc ~xs ~cooperative domid =
 		debug "Read [%s]" line;
 	)
 
-let restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~vcpus domid fd =
+let pv_restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~vcpus domid fd =
 	let mem_max_kib' = Memory.Linux.required_available mem_max_kib in
 
 	let store_port, console_port =
@@ -668,6 +668,20 @@ let hvm_restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~shadow_multiplier ~vcpus ~
 	] in
 	(* and finish domain's building *)
 	build_post ~xc ~xs ~vcpus ~mem_target_kib ~mem_max_kib domid store_mfn store_port [] vm_stuff
+
+let restore ~xc ~xs info domid fd =
+	let restore_fct = match info.priv with
+	| BuildHVM hvminfo ->
+		hvm_restore ~shadow_multiplier:hvminfo.shadow_multiplier
+		            ~pae:hvminfo.pae ~viridian:hvminfo.viridian
+		            ~timeoffset:hvminfo.timeoffset ~timer_mode:hvminfo.timer_mode
+		            ~hpet:hvminfo.hpet ~vpt_align:hvminfo.vpt_align
+	| BuildPV pvinfo   ->
+		pv_restore
+		in
+	restore_fct ~xc ~xs
+	            ~mem_max_kib:info.memory_max ~mem_target_kib:info.memory_target ~vcpus:info.vcpus
+	            domid fd
 
 type suspend_flag = Live | Debug
 

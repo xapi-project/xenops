@@ -122,14 +122,14 @@ val build_hvm: xc: Xc.handle -> xs: Xs.xsh -> mem_max_kib:Int64.t
             -> timeoffset:string -> timer_mode:int option -> hpet:int option -> vpt_align:int option -> domid
             -> domarch
 
-(** Restore a domain using the info provided *)
+(** Build a domain using the info provided *)
 val build: xc: Xc.handle -> xs: Xs.xsh -> build_info -> domid -> domarch
 
 (** resume a domain either cooperative or not *)
 val resume: xc: Xc.handle -> xs: Xs.xsh -> cooperative: bool -> domid -> unit
 
 (** restore a PV domain into a fresh domain created with 'make' *)
-val restore: xc: Xc.handle -> xs: Xs.xsh -> mem_max_kib:Int64.t 
+val pv_restore: xc: Xc.handle -> xs: Xs.xsh -> mem_max_kib:Int64.t
           -> mem_target_kib:Int64.t -> vcpus:int -> domid -> Unix.file_descr
           -> unit
 
@@ -141,6 +141,9 @@ val hvm_restore: xc: Xc.handle -> xs: Xs.xsh -> mem_max_kib:Int64.t
              -> timer_mode:int option -> hpet:int option -> vpt_align: int option
              -> domid -> Unix.file_descr
              -> unit
+
+(** Restore a domain using the info provided *)
+val restore: xc: Xc.handle -> xs: Xs.xsh -> build_info -> domid -> Unix.file_descr -> unit
 
 type suspend_flag = Live | Debug
 
