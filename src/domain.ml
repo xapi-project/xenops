@@ -155,6 +155,8 @@ let make ~xc ~xs ~hvm ?(name="") ?(xsdata=[]) ?(platformdata=[]) uuid =
 		xs.Xs.writev dom_path (List.map (fun (k,v) ->
 			("platform/" ^ k, v)) platformdata);
 
+		xs.Xs.write (dom_path ^ "/control/platform-feature-multiprocessor-suspend") "1";
+
 		debug "Created domain with id: %d" domid;
 		domid
 	with e ->
