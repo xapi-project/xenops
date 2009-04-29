@@ -50,6 +50,7 @@ type dev_event =
 	| ChangeRtc of string * string
 	| Message of string * string * int64 * string
 	| HotplugChanged of bool * string * string * string option * string option
+	| Extra of string * string * string option
 
 (* type dev_state = Connecting | Connected | Closing | Closed *)
 
@@ -90,6 +91,8 @@ val init : ?callback_introduce:(ctx -> domid -> unit)
         -> ?callback_devices:(ctx -> domid -> dev_event -> unit)
 	-> ?callback_guest_agent:(ctx -> domid -> unit)
         -> ?monitor_devices:bool
+	-> ?extra_local_watches:(string list)
+	-> ?extra_vm_watches:(string list)
         -> unit -> ctx
 val close : ctx -> unit
 
@@ -105,4 +108,6 @@ val loop : ?callback_introduce:(ctx -> domid -> unit)
         -> ?callback_release:(ctx -> domid -> unit)
         -> ?callback_devices:(ctx -> domid -> dev_event -> unit)
 	-> ?callback_guest_agent:(ctx -> domid -> unit)
+	-> ?extra_local_watches:(string list)
+	-> ?extra_vm_watches:(string list)
         -> unit -> unit

@@ -45,6 +45,7 @@ type dev_event =
 	(* uuid, name, priority, data *)
 	| Message of string * string * int64 * string
 	| HotplugChanged of bool * string * string * string option * string option
+	| Extra of string * string * string option
 
 type xs_dev_state =
 	| Connecting
@@ -60,6 +61,8 @@ type internal_dev_event =
 	| Frontend of xs_dev_state
 	| Error of string
 	| Rtc of string * string (* uuid, data *)
+	| ExtraVm of string * string * string option
+	| ExtraLocal of string * string option
 	| IntMessage of string * string * int64 * string (* uuid, name, priority, body *)
 	| HotplugBackend of string option
 	| HotplugFrontend of string option
@@ -98,6 +101,8 @@ let string_of_dev_event ev =
 		sprintf "HotplugChanged on %s %s %s {%s->%s}" (string_of_b b) s i
 		        (string_of_string_opt old)
 		        (string_of_string_opt n)
+	| Extra (uuid, node, value) ->
+		sprintf "extra vm {%s,%s,%s}" uuid node (match value with None -> "" | Some x -> x)
 
 type died_reason =
 	| Crashed
@@ -143,6 +148,8 @@ type ctx = {
 	mutable callback_guest_agent: ctx -> domid -> unit;
 	monitor_devices: bool;
 	mutable currents: (domid * state) list;
+	extra_local_watches: string list;
+	extra_vm_watches: string list;
 	tbl: (domid, domstate) Hashtbl.t;
 }
 
@@ -330,12 +337,23 @@ let domain_update ctx =
 			sprintf "/local/domain/%d/error/device" domid;
 		] else [] in
 
+	let extra_local_paths_to_watch domid =
+		List.map (fun p -> sprintf "/local/domain/%d/%s" domid p) ctx.extra_local_watches
+		in
+	let extra_vm_paths_to_watch uuid =
+		List.map (fun p -> sprintf "/vm/%s/%s" uuid p) ctx.extra_vm_watches
+		in
+
+	let all_watches uuid domid =
+		List.map (fun p -> p, "xal-" ^ string_of_int domid) (paths_to_watch domid) @
+		List.map (fun p -> p, "xal-extra-local") (extra_local_paths_to_watch domid) @
+		List.map (fun p -> p, "xal-extra-vm") (extra_vm_paths_to_watch uuid)
+		in
+
 	let add_domain_watch uuid domid =
-		List.iter (fun p -> ctx.xs.Xs.watch p ("xal-" ^ string_of_int domid))
-		          (paths_to_watch domid)
-	and del_domain_watch domid =
-		List.iter (fun p -> try ctx.xs.Xs.unwatch p ("xal-" ^ string_of_int domid) with _ -> ())
-		          (paths_to_watch domid)
+		List.iter (fun (p, t) -> ctx.xs.Xs.watch p t) (all_watches uuid domid)
+	and del_domain_watch uuid domid =
+		List.iter (fun (p, t) -> try ctx.xs.Xs.unwatch p t with _ -> ()) (all_watches uuid domid)
 		in
 
 	let domain_create domid uuid =
@@ -349,7 +367,7 @@ let domain_update ctx =
 	let domain_set_dead domid reason =
 		let domev = get_domstate ctx domid in
 		domev.dead_reason <- Some reason;
-		del_domain_watch domid;
+		del_domain_watch domev.uuid domid;
 		deads := domid :: !deads;
 		in
 
@@ -401,7 +419,7 @@ let domain_update ctx =
  * /vm   /<uuid> /rtc     / timeoffset
  * /local/domain /<domid> /messages/<uid> /name   /prio   /body
  *)
-let other_watch xs w v =
+let other_watch_no_token_match xs w v =
 	let read_state path =
 		try
 			let s = xs.Xs.read path in
@@ -462,6 +480,32 @@ let other_watch xs w v =
 	    end
 	| _ -> None
 
+let watch_extra_vm xs w =
+	let lpath = String.split '/' w in
+	match lpath with
+	| "" :: "vm" :: uuid :: node ->
+		let value = try Some (xs.Xs.read w) with _ -> None in
+		Some (-1, (ExtraVm (uuid, String.concat "/" node, value)), "", "")
+	| _ -> None
+
+let watch_extra_local xs w =
+	let lpath = String.split '/' w in
+	match lpath with
+	| "" :: "local" :: "domain" :: domid :: node ->
+		let domid = int_of_string domid in
+		let value = try Some (xs.Xs.read w) with _ -> None in
+		Some (domid, (ExtraLocal (String.concat "/" node, value)), "", "")
+	| _ -> None
+
+(*
+ * here with match only specific extras case. otherwise we let the path speak for himself
+ *)
+let other_watch xs w v =
+	match v with
+	| "xal-extra-local" -> watch_extra_local xs w
+	| "xal-extra-vm"    -> watch_extra_vm xs w
+	| _                 -> other_watch_no_token_match xs w v
+
 let device_state_init ctx domid =
 	let xs = ctx.xs in
 	let frontend_path = sprintf "/local/domain/%u/device" domid in
@@ -494,8 +538,9 @@ let device_state_init ctx domid =
 	List.iter (fun ty ->
 		let devids = xs.Xs.directory (frontend_path ^ "/" ^ ty) in
 		List.iter (fun devid ->
-			try iter_device ty devid with exn -> ()) devids
-		) frontend_tys;
+			try iter_device ty devid with exn -> ()
+		) devids
+	) frontend_tys;
 	()
 
 let callback_dom_null ctx domid = ()
@@ -505,7 +550,9 @@ let init ?(callback_introduce = callback_dom_null)
          ?(callback_release = callback_dom_null)
          ?(callback_devices = callback_dev_null)
 	 ?(callback_guest_agent = callback_dom_null)
-         ?(monitor_devices = false) () =
+         ?(monitor_devices = false)
+         ?(extra_local_watches = [])
+	 ?(extra_vm_watches = []) () =
 	(* Make sure if this function fails to close any opened descriptors *)
 	let xs = Xs.daemon_open () in	
 	try
@@ -519,6 +566,8 @@ let init ?(callback_introduce = callback_dom_null)
 				callback_devices = callback_devices;
 				callback_guest_agent = callback_guest_agent;
 				monitor_devices = monitor_devices;
+				extra_local_watches = extra_local_watches;
+				extra_vm_watches = extra_vm_watches;
 				currents = [];
 				tbl = Hashtbl.create 20;
 			} in
@@ -573,6 +622,10 @@ let diff_device_state backend ty devid oldstate newstate =
 let domain_device_event ctx w v =
 	match other_watch ctx.xs w v with
 	| None                        -> ()
+	| Some (_, ExtraVm (uuid, node, value), _, _) ->
+		ctx.callback_devices ctx (-1) (Extra (uuid, node, value));
+	| Some (domid, ExtraLocal (node, value), _, _) ->
+		ctx.callback_devices ctx domid (Extra ("", node, value));
 	| Some (_, Rtc (uuid, value), _, _) ->
 		ctx.callback_devices ctx (-1) (ChangeRtc (uuid, value))
 	| Some (_, IntMessage (uuid, name, priority, body), _, _) ->
@@ -585,7 +638,7 @@ let domain_device_event ctx w v =
 		let devstate = get_devstate ctx domid ty devid in
 
 		match ev with
-		| Rtc _ | IntMessage _ | BackThread _ | BackEject -> assert false
+		| Rtc _ | ExtraVm _ | ExtraLocal _ | IntMessage _ | BackThread _ | BackEject -> assert false
 		| Backend state  ->
 			let oldstate = devstate.backstate in
 			devstate.backstate <- state;
@@ -696,9 +749,11 @@ let wait_release ctx ?timeout domid =
 				raise Timeout
 	)
 
-let loop ?callback_introduce ?callback_release ?callback_devices ?callback_guest_agent () =
+let loop ?callback_introduce ?callback_release ?callback_devices ?callback_guest_agent ?extra_local_watches ?extra_vm_watches () =
 	let ctx = init ?callback_introduce ?callback_release
-	               ?callback_devices ?callback_guest_agent ~monitor_devices:true () in
+	               ?callback_devices ?callback_guest_agent
+	               ?extra_local_watches ?extra_vm_watches
+	               ~monitor_devices:true () in
 
 	try
 		while true
