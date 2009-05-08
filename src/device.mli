@@ -57,6 +57,7 @@ sig
 	       -> virtpath:string -> phystype:physty -> physpath:string
 	       -> dev_type:devty
 	       -> unpluggable:bool
+	       -> diskinfo_pt:bool
 	       -> ?protocol:protocol
 	       -> ?extra_backend_keys:(string*string) list
 	       -> ?backend_domid:Xc.domid
