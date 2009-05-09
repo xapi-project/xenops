@@ -424,24 +424,26 @@ let unpause ~xs (x: device) =
    and 0x83. The front end can then report this informationt to the VM for
    example to present the same disk serial number. *)
 let add_disk_info back_tbl physpath =
+	(* TODO: the censored device is currently hard-coded to /dev/sda *)
+	let physpath =
+		match physpath with
+		| "/dev/mapper/censored" -> "/dev/sda"
+		| _                      -> physpath
+		in
 	try
 		let std_inq = Scsi.scsi_inq_standard physpath 1 in
 		let page80_inq = Scsi.scsi_inq_vpd physpath 0x80 in
 		let page83_inq = Scsi.scsi_inq_vpd physpath 0x83 in
 		
 		if String.length std_inq > 0 && String.length page80_inq > 0 then (
-			debug "Adding disk information.";
-			Hashtbl.add back_tbl "sm-data" "";
-			Hashtbl.add back_tbl "sm-data/scsi" "";
-			Hashtbl.add back_tbl "sm-data/scsi/0x12" "";
+			debug "Adding SCSI disk information.";
 			Hashtbl.add back_tbl "sm-data/scsi/0x12/default" (Base64.encode std_inq);
 			Hashtbl.add back_tbl "sm-data/scsi/0x12/0x80" (Base64.encode page80_inq);
 			if String.length page83_inq > 0 then
 				Hashtbl.add back_tbl "sm-data/scsi/0x12/0x83" (Base64.encode page83_inq)
 		)
-		
 	with e ->
-		debug "Caught exception during SCSI inquiry: %s" (Printexc.to_string e)
+		warn "Caught exception during SCSI inquiry: %s" (Printexc.to_string e)
 	
 (* Add the VBD to the domain, taking care of allocating any resources (specifically
    loopback mounts). When this command returns, the device is ready. (This isn't as
@@ -495,15 +497,8 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable ~dis
 		backend_ty, backend
 	| Phys ->
 		Hashtbl.add back_tbl "physical-device" (string_of_major_minor physpath);
-		(* Call helper to add pass-through disk information if feature is enabled 
-		   TODO: Currently this is hard-coded to /dev/sda since the censored device 
-           mapper assumes /dev/sda *)
-		if diskinfo_pt then (
-			if physpath <> "/dev/mapper/censored" then
-				add_disk_info back_tbl physpath
-			else
-				add_disk_info back_tbl "/dev/sda"		
-		);
+		if diskinfo_pt then
+			add_disk_info back_tbl physpath;
 		backend_blk "raw" physpath
 	| Qcow | Vhd | Aio ->
 		backend_tap (string_of_physty phystype) physpath
