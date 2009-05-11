@@ -127,7 +127,7 @@ sig
 
 	exception Cannot_use_pci_with_no_pciback of t list
 
-	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool
+	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> msitranslate:int
 	       -> (int * int * int * int) list -> Xc.domid -> int -> unit
 	val release : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool
 	       -> (int * int * int * int) list -> Xc.domid -> int -> unit
