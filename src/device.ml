@@ -420,11 +420,36 @@ let unpause ~xs (x: device) =
 	Watch.wait_for ~xs (Watch.key_to_disappear response_path);
 	debug "Device.Vbd.unpause %s complete" (string_of_device x)
 
+(* Add the SCSI inquiry information for the standard inquiry and VPD page 0x80
+   and 0x83. The front end can then report this informationt to the VM for
+   example to present the same disk serial number. *)
+let add_disk_info back_tbl physpath =
+	(* TODO: the censored device is currently hard-coded to /dev/sda *)
+	let physpath =
+		match physpath with
+		| "/dev/mapper/censored" -> "/dev/sda"
+		| _                      -> physpath
+		in
+	try
+		let std_inq = Scsi.scsi_inq_standard physpath 1 in
+		let page80_inq = Scsi.scsi_inq_vpd physpath 0x80 in
+		let page83_inq = Scsi.scsi_inq_vpd physpath 0x83 in
+		
+		if String.length std_inq > 0 && String.length page80_inq > 0 then (
+			debug "Adding SCSI disk information.";
+			Hashtbl.add back_tbl "sm-data/scsi/0x12/default" (Base64.encode std_inq);
+			Hashtbl.add back_tbl "sm-data/scsi/0x12/0x80" (Base64.encode page80_inq);
+			if String.length page83_inq > 0 then
+				Hashtbl.add back_tbl "sm-data/scsi/0x12/0x83" (Base64.encode page83_inq)
+		)
+	with e ->
+		warn "Caught exception during SCSI inquiry: %s" (Printexc.to_string e)
+	
 (* Add the VBD to the domain, taking care of allocating any resources (specifically
    loopback mounts). When this command returns, the device is ready. (This isn't as
    concurrent as xend-- xend allocates loopdevices via hotplug in parallel and then
    performs a 'waitForDevices') *)
-let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable
+let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable ~diskinfo_pt
         ?(protocol=Protocol_Native) ?extra_backend_keys ?(backend_domid=0) domid  =
 	let back_tbl = Hashtbl.create 16 and front_tbl = Hashtbl.create 16 in
 	let devid = device_number virtpath in
@@ -472,6 +497,8 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable
 		backend_ty, backend
 	| Phys ->
 		Hashtbl.add back_tbl "physical-device" (string_of_major_minor physpath);
+		if diskinfo_pt then
+			add_disk_info back_tbl physpath;
 		backend_blk "raw" physpath
 	| Qcow | Vhd | Aio ->
 		backend_tap (string_of_physty phystype) physpath
@@ -855,7 +882,7 @@ let grant_access_resources xc domid resources v =
 		)
 	) resources
 
-let add ~xc ~xs ~hvm pcidevs domid devid =
+let add ~xc ~xs ~hvm ~msitranslate pcidevs domid devid =
 	let pcidevs = List.map (fun (domain, bus, slot, func) ->
 		let (irq, resources, driver) = get_from_system domain bus slot func in
 		{ domain = domain; bus = bus; slot = slot; func = func;
@@ -891,6 +918,7 @@ let add ~xc ~xs ~hvm pcidevs domid devid =
 		"online", "1";
 		"num_devs", string_of_int (List.length xsdevs);
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
+                "msitranslate", string_of_int (msitranslate);
 	] and frontendlist = [
 		"backend-id", "0";
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);

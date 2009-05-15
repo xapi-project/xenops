@@ -57,6 +57,7 @@ sig
 	       -> virtpath:string -> phystype:physty -> physpath:string
 	       -> dev_type:devty
 	       -> unpluggable:bool
+	       -> diskinfo_pt:bool
 	       -> ?protocol:protocol
 	       -> ?extra_backend_keys:(string*string) list
 	       -> ?backend_domid:Xc.domid
@@ -126,7 +127,7 @@ sig
 
 	exception Cannot_use_pci_with_no_pciback of t list
 
-	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool
+	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> msitranslate:int
 	       -> (int * int * int * int) list -> Xc.domid -> int -> unit
 	val release : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool
 	       -> (int * int * int * int) list -> Xc.domid -> int -> unit
