@@ -37,6 +37,7 @@ type build_hvm_info = {
 	timer_mode: int option;
 	hpet: int option;
 	vpt_align: int option;
+	videoram: int option;
 }
 
 type build_pv_info = {
