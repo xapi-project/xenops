@@ -83,7 +83,6 @@ let set_difference a b = List.filter (fun x -> not(List.mem x b)) a
 let assert_file_is_readable filename = 
 	try Unix.access filename [ Unix.F_OK; Unix.R_OK ]
 	with _ -> raise (Could_not_read_file filename)
-let maybe f = function None -> () | Some x -> f x
 
 type domarch = Arch_HVM | Arch_native | Arch_X64 | Arch_X32
 
