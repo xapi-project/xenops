@@ -159,8 +159,7 @@ let make ~xc ~xs info uuid =
 		];
 
 		xs.Xs.writev dom_path info.xsdata;
-		xs.Xs.writev dom_path (List.map (fun (k,v) ->
-			("platform/" ^ k, v)) info.platformdata);
+		xs.Xs.writev (dom_path ^ "/platform") info.platformdata;
 
 		xs.Xs.write (dom_path ^ "/control/platform-feature-multiprocessor-suspend") "1";
 
