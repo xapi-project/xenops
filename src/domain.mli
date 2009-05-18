@@ -68,7 +68,7 @@ val domarch_of_string : string -> domarch
 val hvmloader : string
 
 (** Create a fresh (empty) domain with a specific UUID, returning the domain ID *)
-val make: xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> ?name:string ->
+val make: xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> hap: bool -> ?name:string ->
           ?xsdata:((string * string) list) ->
           ?platformdata:((string * string) list) -> [`domain] Uuid.t -> domid
 

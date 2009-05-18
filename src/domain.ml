@@ -99,10 +99,11 @@ let domarch_of_string = function
 	| _     -> Arch_native
 
 
-let make ~xc ~xs ~hvm ?(name="") ?(xsdata=[]) ?(platformdata=[]) uuid =
+let make ~xc ~xs ~hvm ~hap ?(name="") ?(xsdata=[]) ?(platformdata=[]) uuid =
 	let ssidref = 0l in
-
-	let flags = if hvm then [ Xc.CDF_HVM; Xc.CDF_HAP ] else [] in
+	let flags =
+		(if hvm then [ Xc.CDF_HVM ] else []) @
+		(if (hvm && hap) then [ Xc.CDF_HAP ] else []) in
 	let domid = Xc.domain_create xc ssidref flags uuid in
 	let name = if name <> "" then name else sprintf "Domain-%d" domid in
 	try
