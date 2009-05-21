@@ -24,6 +24,15 @@ open Device_common
 module D = Debug.Debugger(struct let name = "xenops" end)
 open D
 
+type create_info = {
+	ssidref: int32;
+	hvm: bool;
+	hap: bool;
+	name: string;
+	xsdata: (string * string) list;
+	platformdata: (string * string) list;
+}
+
 type build_hvm_info = {
 	pae: bool;
 	apic: bool;
@@ -37,6 +46,7 @@ type build_hvm_info = {
 	timer_mode: int option;
 	hpet: int option;
 	vpt_align: int option;
+	videoram: int option;
 }
 
 type build_pv_info = {
@@ -82,7 +92,6 @@ let set_difference a b = List.filter (fun x -> not(List.mem x b)) a
 let assert_file_is_readable filename = 
 	try Unix.access filename [ Unix.F_OK; Unix.R_OK ]
 	with _ -> raise (Could_not_read_file filename)
-let maybe f = function None -> () | Some x -> f x
 
 type domarch = Arch_HVM | Arch_native | Arch_X64 | Arch_X32
 
@@ -98,15 +107,13 @@ let domarch_of_string = function
 	| "x32" -> Arch_X32
 	| _     -> Arch_native
 
-
-let make ~xc ~xs ~hvm ?(name="") ?(xsdata=[]) ?(platformdata=[]) uuid =
-	let ssidref = 0l in
-
-	let flags = if hvm then [ Xc.CDF_HVM; Xc.CDF_HAP ] else [] in
-	let domid = Xc.domain_create xc ssidref flags uuid in
-	let name = if name <> "" then name else sprintf "Domain-%d" domid in
+let make ~xc ~xs info uuid =
+	let flags =
+		(if info.hvm then [ Xc.CDF_HVM ] else []) @
+		(if (info.hvm && info.hap) then [ Xc.CDF_HAP ] else []) in
+	let domid = Xc.domain_create xc info.ssidref flags uuid in
+	let name = if info.name <> "" then info.name else sprintf "Domain-%d" domid in
 	try
-
 		let dom_path = xs.Xs.getdomainpath domid in
 		let vm_path = "/vm/" ^ (Uuid.to_string uuid) in
 		let vss_path = "/vss/" ^ (Uuid.to_string uuid) in
@@ -151,9 +158,8 @@ let make ~xc ~xs ~hvm ?(name="") ?(xsdata=[]) ?(platformdata=[]) uuid =
 			"name", name;
 		];
 
-		xs.Xs.writev dom_path xsdata;
-		xs.Xs.writev dom_path (List.map (fun (k,v) ->
-			("platform/" ^ k, v)) platformdata);
+		xs.Xs.writev dom_path info.xsdata;
+		xs.Xs.writev (dom_path ^ "/platform") info.platformdata;
 
 		xs.Xs.write (dom_path ^ "/control/platform-feature-multiprocessor-suspend") "1";
 
@@ -210,29 +216,28 @@ let shutdown_wait_for_ack ?timeout ~xs domid req =
 	debug "Waiting for PV domain %d to acknowledge shutdown request" domid;
 	let path = control_shutdown ~xs domid in
 	try
-	  Watch.wait_for ~xs ?timeout (Watch.value_to_become path "");
-	  debug "Domain acknowledged shutdown request";
-	  true
+		Watch.wait_for ~xs ?timeout (Watch.value_to_become path "");
+		debug "Domain acknowledged shutdown request";
+		true
 	with Watch.Timeout _ ->
-	  debug "Timed-out waiting for domain to acknowledge shutdown request";
-	  false
-
+		debug "Timed-out waiting for domain to acknowledge shutdown request";
+		false
 
 let shutdown_ack ?(timeout=60.) ~xc ~xs domid req =
 	(* For both PV and HVM, write the control/shutdown node *)
 	shutdown ~xs domid req;
 	(* PV domains will acknowledge the request (if not then something
 	   very bad is wrong) *)
-	if not((Xc.domain_getinfo xc domid).Xc.hvm_guest)
+	if not ((Xc.domain_getinfo xc domid).Xc.hvm_guest)
 	then shutdown_wait_for_ack ~timeout ~xs domid req
-	else begin
-	  (* If HVM domain has no PV drivers, we shut it down here *)
-	  if not(Xc.hvm_check_pvdriver xc domid)
-	  then Xc.domain_shutdown xc domid (shutdown_to_xc_shutdown req);
-	  (* If HVM domain has PV drivers, it shuts itself down but it
-	     doesn't remove the control/shutdown node. *)
-	  true
-	end
+	else (
+		(* If HVM domain has no PV drivers, we shut it down here *)
+		if not(Xc.hvm_check_pvdriver xc domid)
+		then Xc.domain_shutdown xc domid (shutdown_to_xc_shutdown req);
+		(* If HVM domain has PV drivers, it shuts itself down but it
+		   doesn't remove the control/shutdown node. *)
+		true
+	)
 
 let sysrq ~xs domid key =
 	let path = xs.Xs.getdomainpath domid ^ "/control/sysrq" in
@@ -250,12 +255,12 @@ let hard_shutdown_all_vbds ~xc ~xs ?(extra_debug_paths = []) (devices: device li
 	let debug_watches = List.map Watch.value_to_appear extra_debug_paths in
 	(* Wait for them all to acknowledge *)
 	try
-	  let watches = List.map (Device.Vbd.hard_shutdown_complete ~xs) devices in
-	  ignore(Watch.wait_for ~xs (Watch.all_of (watches @ debug_watches)));
-	  debug "VBD backends have flushed"
+		let watches = List.map (Device.Vbd.hard_shutdown_complete ~xs) devices in
+		ignore(Watch.wait_for ~xs (Watch.all_of (watches @ debug_watches)));
+		debug "VBD backends have flushed"
 	with Watch.Timeout _ ->
-	  debug "Timeout waiting for backends to flush";
-	  raise Timeout_backend
+		debug "Timeout waiting for backends to flush";
+		raise Timeout_backend
 	
 let destroy ?(preserve_xs_vm=false) ~xc ~xs domid =
 	let dom_path = xs.Xs.getdomainpath domid in
@@ -276,34 +281,32 @@ let destroy ?(preserve_xs_vm=false) ~xc ~xs domid =
 	                 (fun () -> Device.Dm.stop ~xs domid Sys.sigterm) ();
 
 	(* Forcibly shutdown every backend *)
-	List.iter 
-	  (fun device ->
-	     try
-	       Device.hard_shutdown ~xs device
-	     with e ->
-	       (* If this fails we may have a resource leak. We should prevent
-		  this from happening! *)
-	       debug "Caught exception %s while destroying device %s"
-		 (Printexc.to_string e) (string_of_device device);
-	       (* Keep going on a best-effort basis *)
-	       ) all_devices;
+	List.iter (fun device ->
+		try Device.hard_shutdown ~xs device
+		with exn ->
+			(* If this fails we may have a resource leak. We should prevent
+			  this from happening! *)
+			debug "Caught exception %s while destroying device %s"
+			      (Printexc.to_string exn) (string_of_device device);
+			(* Keep going on a best-effort basis *)
+	) all_devices;
 
 	(* For each device which has a hotplug entry, perform the cleanup. Even if one
 	   fails, try to cleanup the rest anyway.*)
 	let released = ref [] in
 	List.iter (fun x ->
-		log_exn_continue ("waiting for hotplug for " ^ (string_of_device x))
-		                 (fun () ->
+		let exnstr = "waiting for hotplug for " ^ (string_of_device x) in
+		log_exn_continue exnstr (fun () ->
 			Hotplug.release ~xs x; released := x :: !released
-		                 ) ()
-		) all_devices;
+		) ()
+	) all_devices;
 
 	(* If we fail to release a device we leak resources. If we are to tolerate this
 	   then we need an async cleanup thread. *)
 	let failed_devices = List.filter (fun x -> not(List.mem x !released)) all_devices in
 	List.iter (fun dev ->
-		error "Domain.destroy failed to release device: %s"
-		      (string_of_device dev)) failed_devices;
+		error "Domain.destroy failed to release device: %s" (string_of_device dev)
+	) failed_devices;
 
 	(* Delete the /vm/<uuid> and /vss/<uuid> directories if they exists *)
 	if not preserve_xs_vm then (
@@ -326,30 +329,32 @@ let destroy ?(preserve_xs_vm=false) ~xc ~xs domid =
 
 	(* Block waiting for the dying domain to disappear: aim is to catch shutdown errors early*)
 	let still_exists () = 
-	  try
-	    let info = Xc.domain_getinfo xc domid in
-	    debug "Domain %d still exists (domid=%d; uuid=%s): waiting for it to disappear." domid info.Xc.domid (Uuid.to_string (Uuid.uuid_of_int_array info.Xc.handle));
-	    true
-	  with 
-	  | Xc.Error err ->
-	      debug "Xc.domain_getinfo %d threw: %s -- assuming domain nolonger exists" domid err;
-	      false
-	  | e ->
-	      warn "Xc.domain_getinfo %d threw unexpected error: %s -- assuming domain nolonger exists" domid (Printexc.to_string e);
-	      raise e in
+		try
+			let info = Xc.domain_getinfo xc domid in
+			debug "Domain %d still exists (domid=%d; uuid=%s): waiting for it to disappear."
+			      domid info.Xc.domid (Uuid.to_string (Uuid.uuid_of_int_array info.Xc.handle));
+			true
+		with 
+		| Xc.Error err ->
+			debug "Xc.domain_getinfo %d threw: %s -- assuming domain nolonger exists" domid err;
+			false
+		| e ->
+			warn "Xc.domain_getinfo %d threw unexpected error: %s -- assuming domain nolonger exists"
+			     domid (Printexc.to_string e);
+			raise e
+		in
 	let start = Unix.gettimeofday () in
 	let timeout = 30. in
 	while still_exists () && (Unix.gettimeofday () -. start < timeout) do
-	  Unix.sleep 5
+		Unix.sleep 5
 	done;
-	if still_exists () then begin
-	  (* CA-13801: to avoid confusing people, we shall change this domain's uuid *)
-	  let s = Printf.sprintf "deadbeef-dead-beef-dead-beef0000%04x" domid in
-	  warn "Domain stuck in dying state after 30s; resetting UUID to %s" s;
-	  Xc.domain_sethandle xc domid (Uuid.of_string s);
-	  raise (Domain_stuck_in_dying_state domid)
-	end
-
+	if still_exists () then (
+		(* CA-13801: to avoid confusing people, we shall change this domain's uuid *)
+		let s = Printf.sprintf "deadbeef-dead-beef-dead-beef0000%04x" domid in
+		warn "Domain stuck in dying state after 30s; resetting UUID to %s" s;
+		Xc.domain_sethandle xc domid (Uuid.of_string s);
+		raise (Domain_stuck_in_dying_state domid)
+	)
 
 let pause ~xc domid =
 	Xc.domain_pause xc domid
@@ -503,13 +508,13 @@ let build_hvm ~xc ~xs ~mem_max_kib ~mem_target_kib ~shadow_multiplier ~vcpus
 	   Detect this and override. *)
 	let requested_shadow_mib = Int64.to_int (Int64.div shadow_kib 1024L) in
 	let actual_shadow_mib = Xc.shadow_allocation_get xc domid in
-	if actual_shadow_mib < requested_shadow_mib then begin
-	  warn "HVM domain builder reduced our shadow memory from %d to %d MiB; reverting" 
-	    requested_shadow_mib actual_shadow_mib;
-	  Xc.shadow_allocation_set xc domid requested_shadow_mib;
-	  let shadow = Xc.shadow_allocation_get xc domid in
-	  debug "Domain now has %d MiB of shadow" shadow;
-	end;
+	if actual_shadow_mib < requested_shadow_mib then (
+		warn "HVM domain builder reduced our shadow memory from %d to %d MiB; reverting" 
+		     requested_shadow_mib actual_shadow_mib;
+		Xc.shadow_allocation_set xc domid requested_shadow_mib;
+		let shadow = Xc.shadow_allocation_get xc domid in
+		debug "Domain now has %d MiB of shadow" shadow;
+	);
 
 	debug "Read [%s]" line;
 	let store_mfn =
@@ -578,8 +583,8 @@ let restore_common ~xc ~xs ~hvm ~store_port ~console_port ~vcpus ~extras domid f
 	  ] @ extras) [ fd ] in
 
 	let line = finally
-	  (fun () -> XenguestHelper.receive_success cnx)
-	  (fun () -> XenguestHelper.disconnect cnx) in
+		(fun () -> XenguestHelper.receive_success cnx)
+		(fun () -> XenguestHelper.disconnect cnx) in
 
 	debug "Read [%s]" line;
 	let store_mfn, console_mfn =
