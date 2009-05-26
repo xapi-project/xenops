@@ -1063,6 +1063,7 @@ type info = {
 	acpi: bool;
 	disp: disp_opt;
 	pci_emulations: string list;
+	sound: string option;
 	power_mgmt: int;
 	oem_features: int;
 	extras: (string * string option) list;
