@@ -1150,6 +1150,11 @@ let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 			then [ "-vncunused"; "-k"; keymap ], true
 			else [ "-vnc"; string_of_int port; "-k"; keymap ], true
 		in
+	let sound_options =
+		match info.sound with
+		| None        -> []
+		| Some device -> [ "-soundhw"; device ]
+		in
 
 	let l = [ string_of_int domid; (* absorbed by qemu-dm-wrapper *)
 		  log;                 (* absorbed by qemu-dm-wrapper *)
@@ -1159,7 +1164,7 @@ let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 		  "-boot"; info.boot;
 		  "-serial"; info.serial;
 		  "-vcpus"; string_of_int info.vcpus; ]
-	   @ disp_options @ usb' @ (List.concat nics')
+	   @ disp_options @ sound_options @ usb' @ (List.concat nics')
 	   @ (if info.acpi then [ "-acpi" ] else [])
 	   @ (if restore then [ "-loadvm"; restorefile ] else [])
 	   @ (List.fold_left (fun l pci -> "-pciemulation" :: pci :: l) [] (List.rev info.pci_emulations))
