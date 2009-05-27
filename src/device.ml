@@ -1053,6 +1053,22 @@ type disp_opt =
 	| VNC of bool * int * string (* auto-allocate, port if previous false, keymap *)
 	| SDL of string (* X11 display *)
 
+type info = {
+	memory: int64;
+	boot: string;
+	serial: string;
+	vcpus: int;
+	usb: string list;
+	nics: (string * string * string option) list;
+	acpi: bool;
+	disp: disp_opt;
+	pci_emulations: string list;
+	sound: string option;
+	power_mgmt: int;
+	oem_features: int;
+	extras: (string * string option) list;
+}
+
 (* Path to redirect qemu's stdout and stderr *)
 let logfile domid = Printf.sprintf "/tmp/qemu.%d" domid
 
@@ -1089,15 +1105,13 @@ let signal ~xs ~domid cmd param retexpected =
 	()
 
 (* Returns the allocated vnc port number *)
-let __start ~xs ~dmpath ~memory ~boot ~serial ~vcpus ?(usb=[]) ?(nics=[])
-            ~acpi ~disp ?(pci_emulations=[]) ?(power_mgmt=0) ?(oem_features=0) 
-            ~extras ~restore ?(timeout=qemu_dm_ready_timeout) domid =
+let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 	let usb' =
-		if usb = [] then
+		if info.usb = [] then
 			[]
 		else
 			("-usb" :: (List.concat (List.map (fun device ->
-					   [ "-usbdevice"; device ]) usb))) in
+					   [ "-usbdevice"; device ]) info.usb))) in
 	(* qemu need a different id for every vlan, or things get very bad *)
 	let vlan_id = ref 0 in
 	let if_number = ref 0 in
@@ -1113,22 +1127,22 @@ let __start ~xs ~dmpath ~memory ~boot ~serial ~vcpus ?(usb=[]) ?(nics=[])
 		incr if_number;
 		incr vlan_id;
 		r
-	) nics in
+	) info.nics in
 	let qemu_pid_path = xs.Xs.getdomainpath domid ^ "/qemu-pid" in
 
-        if power_mgmt <> 0 then begin
+        if info.power_mgmt <> 0 then begin
                 try if (Unix.stat "/proc/acpi/battery").Unix.st_kind == Unix.S_DIR then
-                                xs.Xs.write (power_mgmt_path domid) (string_of_int power_mgmt);
+                                xs.Xs.write (power_mgmt_path domid) (string_of_int info.power_mgmt);
                 with _ -> () ;
         end;
 
-        if oem_features <> 0 then
-                xs.Xs.write (oem_features_path domid) (string_of_int oem_features);
+        if info.oem_features <> 0 then
+                xs.Xs.write (oem_features_path domid) (string_of_int info.oem_features);
 
 	let log = logfile domid in
 	let restorefile = sprintf "/tmp/xen.qemu-dm.%d" domid in
 	let disp_options, wait_for_port =
-		match disp with
+		match info.disp with
 		| NONE                     -> [], false
 		| SDL (x11name)            -> [], false
 		| VNC (auto, port, keymap) ->
@@ -1136,20 +1150,25 @@ let __start ~xs ~dmpath ~memory ~boot ~serial ~vcpus ?(usb=[]) ?(nics=[])
 			then [ "-vncunused"; "-k"; keymap ], true
 			else [ "-vnc"; string_of_int port; "-k"; keymap ], true
 		in
+	let sound_options =
+		match info.sound with
+		| None        -> []
+		| Some device -> [ "-soundhw"; device ]
+		in
 
 	let l = [ string_of_int domid; (* absorbed by qemu-dm-wrapper *)
 		  log;                 (* absorbed by qemu-dm-wrapper *)
 		  (* everything else goes straight through to qemu-dm: *)
 		  "-d"; string_of_int domid;
-		  "-m"; Int64.to_string (Int64.div memory 1024L);
-		  "-boot"; boot;
-		  "-serial"; serial;
-		  "-vcpus"; string_of_int vcpus; ]
-	   @ disp_options @ usb' @ (List.concat nics')
-	   @ (if acpi then [ "-acpi" ] else [])
+		  "-m"; Int64.to_string (Int64.div info.memory 1024L);
+		  "-boot"; info.boot;
+		  "-serial"; info.serial;
+		  "-vcpus"; string_of_int info.vcpus; ]
+	   @ disp_options @ sound_options @ usb' @ (List.concat nics')
+	   @ (if info.acpi then [ "-acpi" ] else [])
 	   @ (if restore then [ "-loadvm"; restorefile ] else [])
-	   @ (List.fold_left (fun l pci -> "-pciemulation" :: pci :: l) [] (List.rev pci_emulations))
-	   @ (List.fold_left (fun l (k, v) -> ("-" ^ k) :: (match v with None -> l | Some v -> v :: l)) [] extras)
+	   @ (List.fold_left (fun l pci -> "-pciemulation" :: pci :: l) [] (List.rev info.pci_emulations))
+	   @ (List.fold_left (fun l (k, v) -> ("-" ^ k) :: (match v with None -> l | Some v -> v :: l)) [] info.extras)
 		in
 	(* Now add the close fds wrapper *)
 	let cmdline = Forkhelpers.close_and_exec_cmdline [] dmpath l in
@@ -1202,16 +1221,8 @@ let __start ~xs ~dmpath ~memory ~boot ~serial ~vcpus ?(usb=[]) ?(nics=[])
 	) else
 		(-1)	
 
-
-let start ~xs ~dmpath ~memory ~boot ~serial ~vcpus ?(usb=[]) ?(nics=[])
-          ?(acpi=false) ~disp ?(pci_emulations=[]) ?(extras=[]) ?power_mgmt ?oem_features ?timeout domid =
-	__start ~xs ~dmpath ~memory ~boot ~serial ~vcpus ~usb
-	        ~nics ~acpi ~disp ~pci_emulations ~restore:false ~extras ?power_mgmt ?oem_features ?timeout domid
-
-let restore ~xs ~dmpath ~memory ~boot ~serial ~vcpus ?(usb=[]) ?(nics=[])
-            ?(acpi=false) ~disp ?(pci_emulations=[]) ?(extras=[]) ?power_mgmt ?oem_features ?timeout domid =
-	__start ~xs ~dmpath ~memory ~boot ~serial ~vcpus ~usb
-	        ~nics ~acpi ~disp ~pci_emulations ~restore:true ~extras ?power_mgmt ?oem_features ?timeout domid
+let start ~xs ~dmpath ?timeout info domid = __start ~xs ~restore:false ~dmpath ?timeout info domid
+let restore ~xs ~dmpath ?timeout info domid = __start ~xs ~restore:true ~dmpath ?timeout info domid
 
 (* Called by every domain destroy, even non-HVM *)
 let stop ~xs domid signal =
