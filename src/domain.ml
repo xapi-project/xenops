@@ -369,10 +369,10 @@ let create_channels ~xc domid =
 	store, console
 
 (* pre build *)
-let build_pre ~xc ~xs ~vcpus ~mem_max_kib ~shadow_kib ~timer_mode ~hpet ~vpt_align domid =
+let build_pre ~xc ~xs ~vcpus ~mem_max_kib ~shadow_kib ~video_ram_kib ~timer_mode ~hpet ~vpt_align domid =
 	let shadow_mib = Int64.to_int (Int64.div shadow_kib 1024L) in
-	debug "build_pre domid=%d; mem=%Lu KiB; shadow=%Lu KiB (%d MiB)"
-	      domid mem_max_kib shadow_kib shadow_mib;
+	debug "build_pre domid=%d; mem=%Lu KiB; shadow=%Lu KiB (%d MiB); video=%Lu KiB"
+	      domid mem_max_kib shadow_kib shadow_mib video_ram_kib;
 	let maybe_exn_ign name f opt =
 		maybe (fun opt -> try f opt with exn -> warn "exception setting %s: %s" name (Printexc.to_string exn)) opt
 		in
@@ -380,7 +380,7 @@ let build_pre ~xc ~xs ~vcpus ~mem_max_kib ~shadow_kib ~timer_mode ~hpet ~vpt_ali
 	maybe_exn_ign "hpet" (fun hpet -> Xc.domain_set_hpet xc domid hpet) hpet;
 	maybe_exn_ign "vpt align" (fun vpt_align -> Xc.domain_set_vpt_align xc domid vpt_align) vpt_align;
 	Xc.domain_max_vcpus xc domid vcpus;
-	Xc.domain_setmaxmem xc domid mem_max_kib;
+	Xc.domain_setmaxmem xc domid (Int64.add mem_max_kib video_ram_kib);
 	Xc.domain_set_memmap_limit xc domid mem_max_kib;
 	Xc.shadow_allocation_set xc domid shadow_mib;
 	create_channels ~xc domid
@@ -426,7 +426,7 @@ let build_linux ~xc ~xs ~mem_max_kib ~mem_target_kib ~kernel ~cmdline ~ramdisk ~
 	let mem_max_kib' = Memory.Linux.required_available mem_max_kib in
 
 	let store_port, console_port =
-		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib:0L ~vcpus ~timer_mode:None ~hpet:None ~vpt_align:None domid in
+		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib:0L ~video_ram_kib:0L ~vcpus ~timer_mode:None ~hpet:None ~vpt_align:None domid in
 
 	let mem_target_mib = (Int64.to_int (Int64.div mem_target_kib 1024L)) in
 	let cnx = XenguestHelper.connect
@@ -467,7 +467,7 @@ let build_linux ~xc ~xs ~mem_max_kib ~mem_target_kib ~kernel ~cmdline ~ramdisk ~
 	| _            -> Arch_native
 
 (** build hvm type of domain *)
-let build_hvm ~xc ~xs ~mem_max_kib ~mem_target_kib ~shadow_multiplier ~vcpus
+let build_hvm ~xc ~xs ~mem_max_kib ~mem_target_kib ~video_ram_mib ~shadow_multiplier ~vcpus
               ~kernel ~pae ~apic ~acpi ~nx ~smbios_pt ~acpi_pt ~viridian ~timeoffset
 	      ~timer_mode ~hpet ~vpt_align domid =
 	assert_file_is_readable kernel;
@@ -477,9 +477,10 @@ let build_hvm ~xc ~xs ~mem_max_kib ~mem_target_kib ~shadow_multiplier ~vcpus
 	and shadow_kib = Memory.HVM.required_shadow vcpus mem_max_kib shadow_multiplier in
 	(* HVM must have at least 1MiB of shadow *)
 	let shadow_kib = max 1024L shadow_kib in
+	let video_ram_kib = match video_ram_mib with | None -> 4096L | Some mib -> Int64.mul (Int64.of_int mib) 1024L in
 
 	let store_port, console_port =
-		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib ~vcpus ~timer_mode ~hpet ~vpt_align domid in
+		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib ~video_ram_kib ~vcpus ~timer_mode ~hpet ~vpt_align domid in
 
 	let mem_max_mib = (Int64.to_int (Int64.div mem_max_kib 1024L)) in
 
@@ -531,6 +532,7 @@ let build ~xc ~xs info domid =
 	match info.priv with
 	| BuildHVM hvminfo ->
 		build_hvm ~xc ~xs ~mem_max_kib:info.memory_max ~mem_target_kib:info.memory_target
+		          ~video_ram_mib:hvminfo.videoram
 		          ~shadow_multiplier:hvminfo.shadow_multiplier ~vcpus:info.vcpus
 		          ~kernel:info.kernel ~pae:hvminfo.pae ~apic:hvminfo.apic ~acpi:hvminfo.acpi
 		          ~nx:hvminfo.nx ~smbios_pt:hvminfo.smbios_pt ~acpi_pt:hvminfo.acpi_pt ~viridian:hvminfo.viridian ~timeoffset:hvminfo.timeoffset
@@ -643,7 +645,7 @@ let pv_restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~vcpus domid fd =
 	let mem_max_kib' = Memory.Linux.required_available mem_max_kib in
 
 	let store_port, console_port =
-	        build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib:0L ~vcpus ~timer_mode:None ~hpet:None ~vpt_align:None domid in
+	        build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib:0L ~video_ram_kib:0L ~vcpus ~timer_mode:None ~hpet:None ~vpt_align:None domid in
 
 	let store_mfn, console_mfn = restore_common ~xc ~xs ~hvm:false
 	                                            ~store_port ~console_port
@@ -655,13 +657,14 @@ let pv_restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~vcpus domid fd =
 	] in
 	build_post ~xc ~xs ~vcpus ~mem_target_kib ~mem_max_kib domid store_mfn store_port local_stuff []
 
-let hvm_restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~shadow_multiplier ~vcpus ~pae ~viridian
+let hvm_restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~video_ram_mib ~shadow_multiplier ~vcpus ~pae ~viridian
 	        ~timeoffset ~timer_mode ~hpet ~vpt_align domid fd =
 	let shadow_kib = Memory.HVM.required_shadow vcpus mem_max_kib shadow_multiplier
 	and mem_max_kib' = Memory.HVM.required_available mem_max_kib in
+	let video_ram_kib = match video_ram_mib with | None -> 4096L | Some mib -> Int64.mul (Int64.of_int mib) 1024L in
 
 	let store_port, console_port =
-		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib ~vcpus ~timer_mode ~hpet ~vpt_align domid in
+		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib ~video_ram_kib ~vcpus ~timer_mode ~hpet ~vpt_align domid in
 	let extras = [
 		"-pae"; string_of_bool pae;
 		"-viridian"; string_of_bool viridian;
@@ -679,7 +682,7 @@ let hvm_restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~shadow_multiplier ~vcpus ~
 let restore ~xc ~xs info domid fd =
 	let restore_fct = match info.priv with
 	| BuildHVM hvminfo ->
-		hvm_restore ~shadow_multiplier:hvminfo.shadow_multiplier
+		hvm_restore ~video_ram_mib:hvminfo.videoram ~shadow_multiplier:hvminfo.shadow_multiplier
 		            ~pae:hvminfo.pae ~viridian:hvminfo.viridian
 		            ~timeoffset:hvminfo.timeoffset ~timer_mode:hvminfo.timer_mode
 		            ~hpet:hvminfo.hpet ~vpt_align:hvminfo.vpt_align

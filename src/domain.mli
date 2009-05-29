@@ -123,7 +123,7 @@ val build_linux: xc: Xc.handle -> xs: Xs.xsh -> mem_max_kib:Int64.t
 
 (** build an hvm domain in a fresh domain created with 'make' *)
 val build_hvm: xc: Xc.handle -> xs: Xs.xsh -> mem_max_kib:Int64.t
-            -> mem_target_kib:Int64.t -> shadow_multiplier:float
+            -> mem_target_kib:Int64.t -> video_ram_mib:int option -> shadow_multiplier:float
             -> vcpus:int -> kernel:string
             -> pae:bool -> apic:bool -> acpi:bool -> nx:bool
             -> smbios_pt:bool -> acpi_pt:bool -> viridian:bool
@@ -144,7 +144,7 @@ val pv_restore: xc: Xc.handle -> xs: Xs.xsh -> mem_max_kib:Int64.t
 (** restore an HVM domain from the file descriptor into a fresh domain created
  *  with 'make' *)
 val hvm_restore: xc: Xc.handle -> xs: Xs.xsh -> mem_max_kib:Int64.t
-             -> mem_target_kib:Int64.t -> shadow_multiplier:float
+             -> mem_target_kib:Int64.t -> video_ram_mib:int option-> shadow_multiplier:float
              -> vcpus:int -> pae:bool -> viridian:bool -> timeoffset:string
              -> timer_mode:int option -> hpet:int option -> vpt_align: int option
              -> domid -> Unix.file_descr
