@@ -1066,6 +1066,7 @@ type info = {
 	sound: string option;
 	power_mgmt: int;
 	oem_features: int;
+	videoram: int;
 	extras: (string * string option) list;
 }
 
