@@ -1164,7 +1164,8 @@ let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 		  "-m"; Int64.to_string (Int64.div info.memory 1024L);
 		  "-boot"; info.boot;
 		  "-serial"; info.serial;
-		  "-vcpus"; string_of_int info.vcpus; ]
+		  "-vcpus"; string_of_int info.vcpus;
+	          "-videoram"; string_of_int info.videoram; ]
 	   @ disp_options @ sound_options @ usb' @ (List.concat nics')
 	   @ (if info.acpi then [ "-acpi" ] else [])
 	   @ (if restore then [ "-loadvm"; restorefile ] else [])
