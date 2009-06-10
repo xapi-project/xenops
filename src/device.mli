@@ -155,6 +155,7 @@ sig
 		sound: string option;
 		power_mgmt: int;
 		oem_features: int;
+                inject_sci: int;
 		videoram: int;
 		extras: (string * string option) list;
 	}

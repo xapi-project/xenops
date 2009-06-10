@@ -1066,6 +1066,7 @@ type info = {
 	sound: string option;
 	power_mgmt: int;
 	oem_features: int;
+        inject_sci: int;
 	videoram: int;
 	extras: (string * string option) list;
 }
@@ -1092,6 +1093,7 @@ let vnc_port_path domid = sprintf "/local/domain/%d/console/vnc-port" domid
 
 let power_mgmt_path domid = sprintf "/local/domain/0/device-model/%d/xen_extended_power_mgmt" domid
 let oem_features_path domid = sprintf "/local/domain/0/device-model/%d/oem_features" domid
+let inject_sci_path domid = sprintf "/local/domain/0/device-model/%d/inject-sci" domid
 
 let signal ~xs ~domid cmd param retexpected =
 	let cmdpath = sprintf "/local/domain/0/device-model/%d" domid in
@@ -1139,6 +1141,9 @@ let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 
         if info.oem_features <> 0 then
                 xs.Xs.write (oem_features_path domid) (string_of_int info.oem_features);
+
+        if info.inject_sci <> 0 then
+                xs.Xs.write (inject_sci_path domid) (string_of_int info.inject_sci);
 
 	let log = logfile domid in
 	let restorefile = sprintf "/tmp/xen.qemu-dm.%d" domid in
