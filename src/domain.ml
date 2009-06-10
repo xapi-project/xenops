@@ -205,10 +205,19 @@ let hard_shutdown ~xc domid req =
 let control_shutdown ~xs domid = xs.Xs.getdomainpath domid ^ "/control/shutdown"
 
 (** Request a shutdown, return without waiting for acknowledgement *)
-let shutdown ~xs domid req =
+let shutdown ~xc ~xs ~hvm domid req =
 	debug "Requesting shutdown of domain %d" domid;
 	let reason = string_of_shutdown_reason req in
-	xs.Xs.write (control_shutdown ~xs domid) reason
+	xs.Xs.write (control_shutdown ~xs domid) reason;
+	if hvm then (
+		let has_pv_driver = Xc.hvm_check_pvdriver xc domid in
+		let acpi_s_state = Xc.domain_get_acpi_s_state xc domid in
+		(* If HVM domain has no PV drivers or is sleeping (according to acpi suspend state),
+		   we shut it down here using the shutdown hypercall. otherwise it shuts itself down
+		   but if doesn't remove the control/shutdown node *)
+		if not has_pv_driver || acpi_s_state <> 0 then
+			Xc.domain_shutdown xc domid (shutdown_to_xc_shutdown req);
+	)
 
 (** PV domains will acknowledge the request by deleting the node from the
     store, block until this happens. *)
@@ -225,19 +234,14 @@ let shutdown_wait_for_ack ?timeout ~xs domid req =
 
 let shutdown_ack ?(timeout=60.) ~xc ~xs domid req =
 	(* For both PV and HVM, write the control/shutdown node *)
-	shutdown ~xs domid req;
-	(* PV domains will acknowledge the request (if not then something
-	   very bad is wrong) *)
-	if not ((Xc.domain_getinfo xc domid).Xc.hvm_guest)
-	then shutdown_wait_for_ack ~timeout ~xs domid req
-	else (
-		(* If HVM domain has no PV drivers, we shut it down here *)
-		if not(Xc.hvm_check_pvdriver xc domid)
-		then Xc.domain_shutdown xc domid (shutdown_to_xc_shutdown req);
-		(* If HVM domain has PV drivers, it shuts itself down but it
-		   doesn't remove the control/shutdown node. *)
+	let hvm = (Xc.domain_getinfo xc domid).Xc.hvm_guest in
+	shutdown ~xc ~xs ~hvm domid req;
+	if not hvm then
+		(* PV domains will acknowledge the request (if not then something
+		   very bad is wrong) *)
+		shutdown_wait_for_ack ~timeout ~xs domid req
+	else
 		true
-	)
 
 let sysrq ~xs domid key =
 	let path = xs.Xs.getdomainpath domid ^ "/control/sysrq" in

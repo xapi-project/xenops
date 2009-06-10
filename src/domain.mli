@@ -92,7 +92,7 @@ val shutdown_reason_of_int : int -> shutdown_reason
 val hard_shutdown: xc:Xc.handle -> domid -> shutdown_reason -> unit
 
 (** Tell the domain to shutdown with reason 'shutdown_reason'. Don't wait for an ack *)
-val shutdown: xs:Xs.xsh -> domid -> shutdown_reason -> unit
+val shutdown: xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> domid -> shutdown_reason -> unit
 
 (** Tell the domain to shutdown with reason ''shutdown_reason', waiting for an ack *)
 val shutdown_ack: ?timeout:float -> xc:Xc.handle -> xs:Xs.xsh -> domid -> shutdown_reason -> bool
