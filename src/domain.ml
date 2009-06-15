@@ -374,7 +374,6 @@ let create_channels ~xc domid =
 
 (* pre build *)
 let build_pre ~xc ~xs ~vcpus ~mem_max_kib ~shadow_kib ~video_ram_kib ~timer_mode ~hpet ~vpt_align domid =
-	let shadow_kib : int64 option = shadow_kib in
 	let shadow_mib : int option =
 		match shadow_kib with
 		| None     -> None
