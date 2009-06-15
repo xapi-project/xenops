@@ -374,9 +374,14 @@ let create_channels ~xc domid =
 
 (* pre build *)
 let build_pre ~xc ~xs ~vcpus ~mem_max_kib ~shadow_kib ~video_ram_kib ~timer_mode ~hpet ~vpt_align domid =
-	let shadow_mib = Int64.to_int (Int64.div shadow_kib 1024L) in
+	let shadow_kib : int64 option = shadow_kib in
+	let shadow_mib : int option =
+		match shadow_kib with
+		| None     -> None
+		| Some kib -> Some (Int64.to_int (Int64.div kib 1024L)) in
 	debug "build_pre domid=%d; mem=%Lu KiB; shadow=%Lu KiB (%d MiB); video=%Lu KiB"
-	      domid mem_max_kib shadow_kib shadow_mib video_ram_kib;
+	      domid mem_max_kib (match shadow_kib with None -> 0L | Some i -> i)
+	      (match shadow_mib with None -> 0 | Some i -> i) video_ram_kib;
 	let maybe_exn_ign name f opt =
 		maybe (fun opt -> try f opt with exn -> warn "exception setting %s: %s" name (Printexc.to_string exn)) opt
 		in
