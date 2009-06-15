@@ -386,7 +386,7 @@ let build_pre ~xc ~xs ~vcpus ~mem_max_kib ~shadow_kib ~video_ram_kib ~timer_mode
 	Xc.domain_max_vcpus xc domid vcpus;
 	Xc.domain_setmaxmem xc domid (Int64.add mem_max_kib video_ram_kib);
 	Xc.domain_set_memmap_limit xc domid mem_max_kib;
-	Xc.shadow_allocation_set xc domid shadow_mib;
+	maybe (Xc.shadow_allocation_set xc domid) shadow_mib;
 	create_channels ~xc domid
 
 (* puts value in store after the uncooperative domain resume *)
@@ -430,7 +430,8 @@ let build_linux ~xc ~xs ~mem_max_kib ~mem_target_kib ~kernel ~cmdline ~ramdisk ~
 	let mem_max_kib' = Memory.Linux.required_available mem_max_kib in
 
 	let store_port, console_port =
-		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib:0L ~video_ram_kib:0L ~vcpus ~timer_mode:None ~hpet:None ~vpt_align:None domid in
+		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib:None ~video_ram_kib:0L
+		          ~vcpus ~timer_mode:None ~hpet:None ~vpt_align:None domid in
 
 	let mem_target_mib = (Int64.to_int (Int64.div mem_target_kib 1024L)) in
 	let cnx = XenguestHelper.connect
@@ -484,7 +485,8 @@ let build_hvm ~xc ~xs ~mem_max_kib ~mem_target_kib ~video_ram_mib ~shadow_multip
 	let video_ram_kib = match video_ram_mib with | None -> 4096L | Some mib -> Int64.mul (Int64.of_int mib) 1024L in
 
 	let store_port, console_port =
-		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib ~video_ram_kib ~vcpus ~timer_mode ~hpet ~vpt_align domid in
+		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib:(Some shadow_kib)
+		          ~video_ram_kib ~vcpus ~timer_mode ~hpet ~vpt_align domid in
 
 	let mem_max_mib = (Int64.to_int (Int64.div mem_max_kib 1024L)) in
 
@@ -649,7 +651,8 @@ let pv_restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~vcpus domid fd =
 	let mem_max_kib' = Memory.Linux.required_available mem_max_kib in
 
 	let store_port, console_port =
-	        build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib:0L ~video_ram_kib:0L ~vcpus ~timer_mode:None ~hpet:None ~vpt_align:None domid in
+	        build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib:None ~video_ram_kib:0L
+		          ~vcpus ~timer_mode:None ~hpet:None ~vpt_align:None domid in
 
 	let store_mfn, console_mfn = restore_common ~xc ~xs ~hvm:false
 	                                            ~store_port ~console_port
@@ -668,7 +671,8 @@ let hvm_restore ~xc ~xs ~mem_max_kib ~mem_target_kib ~video_ram_mib ~shadow_mult
 	let video_ram_kib = match video_ram_mib with | None -> 4096L | Some mib -> Int64.mul (Int64.of_int mib) 1024L in
 
 	let store_port, console_port =
-		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib ~video_ram_kib ~vcpus ~timer_mode ~hpet ~vpt_align domid in
+		build_pre ~xc ~xs ~mem_max_kib:mem_max_kib' ~shadow_kib:(Some shadow_kib)
+		          ~video_ram_kib ~vcpus ~timer_mode ~hpet ~vpt_align domid in
 	let extras = [
 		"-pae"; string_of_bool pae;
 		"-viridian"; string_of_bool viridian;
