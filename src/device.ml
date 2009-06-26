@@ -832,6 +832,9 @@ type t = {
 	driver: string;
 }
 
+type dev = int * int * int * int
+
+exception Cannot_add of dev list * exn (* devices, reason *)
 exception Cannot_use_pci_with_no_pciback of t list
 
 let get_from_system domain bus slot func =
@@ -882,7 +885,7 @@ let grant_access_resources xc domid resources v =
 		)
 	) resources
 
-let add ~xc ~xs ~hvm ~msitranslate pcidevs domid devid =
+let add_noexn ~xc ~xs ~hvm ~msitranslate pcidevs domid devid =
 	let pcidevs = List.map (fun (domain, bus, slot, func) ->
 		let (irq, resources, driver) = get_from_system domain bus slot func in
 		{ domain = domain; bus = bus; slot = slot; func = func;
@@ -918,13 +921,18 @@ let add ~xc ~xs ~hvm ~msitranslate pcidevs domid devid =
 		"online", "1";
 		"num_devs", string_of_int (List.length xsdevs);
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
-                "msitranslate", string_of_int (msitranslate);
+		"msitranslate", string_of_int (msitranslate);
 	] and frontendlist = [
 		"backend-id", "0";
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 	] in
 	Generic.add_device ~xs device (xsdevs @ backendlist) frontendlist;
 	()
+
+let add ~xc ~xs ~hvm ~msitranslate pcidevs domid devid =
+	try add_noexn ~xc ~xs ~hvm ~msitranslate pcidevs domid devid
+	with exn ->
+		raise (Cannot_add (pcidevs, exn))
 
 let release ~xc ~xs ~hvm pcidevs domid devid =
 	let pcidevs = List.map (fun (domain, bus, slot, func) ->
