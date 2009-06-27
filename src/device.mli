@@ -124,15 +124,17 @@ sig
 		resources: (int64 * int64 * int64) list;
 		driver: string;
 	}
+	type dev = int * int * int * int
 
+	exception Cannot_add of (dev list) * exn
 	exception Cannot_use_pci_with_no_pciback of t list
 
 	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> msitranslate:int
-	       -> (int * int * int * int) list -> Xc.domid -> int -> unit
+	       -> dev list -> Xc.domid -> int -> unit
 	val release : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool
-	       -> (int * int * int * int) list -> Xc.domid -> int -> unit
+	       -> dev list -> Xc.domid -> int -> unit
 	val reset : xs:Xs.xsh -> device -> unit
-	val bind : (int * int * int * int) list -> unit
+	val bind : dev list -> unit
 end
 
 module Dm :
