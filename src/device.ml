@@ -885,7 +885,7 @@ let grant_access_resources xc domid resources v =
 		)
 	) resources
 
-let add_noexn ~xc ~xs ~hvm ~msitranslate pcidevs domid devid =
+let add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt pcidevs domid devid =
 	let pcidevs = List.map (fun (domain, bus, slot, func) ->
 		let (irq, resources, driver) = get_from_system domain bus slot func in
 		{ domain = domain; bus = bus; slot = slot; func = func;
@@ -922,6 +922,7 @@ let add_noexn ~xc ~xs ~hvm ~msitranslate pcidevs domid devid =
 		"num_devs", string_of_int (List.length xsdevs);
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 		"msitranslate", string_of_int (msitranslate);
+                "pci_power_mgmt", string_of_int (pci_power_mgmt);
 	] and frontendlist = [
 		"backend-id", "0";
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
@@ -929,8 +930,8 @@ let add_noexn ~xc ~xs ~hvm ~msitranslate pcidevs domid devid =
 	Generic.add_device ~xs device (xsdevs @ backendlist) frontendlist;
 	()
 
-let add ~xc ~xs ~hvm ~msitranslate pcidevs domid devid =
-	try add_noexn ~xc ~xs ~hvm ~msitranslate pcidevs domid devid
+let add ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt pcidevs domid devid =
+	try add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt pcidevs domid devid
 	with exn ->
 		raise (Cannot_add (pcidevs, exn))
 
