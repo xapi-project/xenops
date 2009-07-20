@@ -21,3 +21,5 @@ extra/*
 .ocamldep.make
 *.exe
 *.stackdump
+build
+dist
