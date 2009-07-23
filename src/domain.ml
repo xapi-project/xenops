@@ -39,6 +39,7 @@ type build_hvm_info = {
 	acpi: bool;
 	nx: bool;
 	smbios_pt: bool;
+        smbios_oem_types_pt: string;
 	acpi_pt: bool;
 	viridian: bool;
 	shadow_multiplier: float;
@@ -477,7 +478,7 @@ let build_linux ~xc ~xs ~mem_max_kib ~mem_target_kib ~kernel ~cmdline ~ramdisk ~
 
 (** build hvm type of domain *)
 let build_hvm ~xc ~xs ~mem_max_kib ~mem_target_kib ~video_ram_mib ~shadow_multiplier ~vcpus
-              ~kernel ~pae ~apic ~acpi ~nx ~smbios_pt ~acpi_pt ~viridian ~timeoffset
+              ~kernel ~pae ~apic ~acpi ~nx ~smbios_pt ~smbios_oem_types_pt ~acpi_pt ~viridian ~timeoffset
 	      ~timer_mode ~hpet ~vpt_align domid =
 	assert_file_is_readable kernel;
 
@@ -507,6 +508,7 @@ let build_hvm ~xc ~xs ~mem_max_kib ~mem_target_kib ~video_ram_mib ~shadow_multip
 	    "-acpi"; string_of_bool acpi;
 	    "-nx"; string_of_bool nx;
 	    "-smbios_pt"; string_of_bool smbios_pt;
+            "-smbios_oem_types_pt"; smbios_oem_types_pt;
 	    "-acpi_pt"; string_of_bool acpi_pt;
 	    "-viridian"; string_of_bool viridian;
 	    "-fork"; "true";
@@ -545,7 +547,8 @@ let build ~xc ~xs info domid =
 		          ~video_ram_mib:hvminfo.videoram
 		          ~shadow_multiplier:hvminfo.shadow_multiplier ~vcpus:info.vcpus
 		          ~kernel:info.kernel ~pae:hvminfo.pae ~apic:hvminfo.apic ~acpi:hvminfo.acpi
-		          ~nx:hvminfo.nx ~smbios_pt:hvminfo.smbios_pt ~acpi_pt:hvminfo.acpi_pt ~viridian:hvminfo.viridian ~timeoffset:hvminfo.timeoffset
+		          ~nx:hvminfo.nx ~smbios_pt:hvminfo.smbios_pt ~smbios_oem_types_pt:hvminfo.smbios_oem_types_pt 
+                          ~acpi_pt:hvminfo.acpi_pt ~viridian:hvminfo.viridian ~timeoffset:hvminfo.timeoffset
 		          ~timer_mode:hvminfo.timer_mode ~hpet:hvminfo.hpet ~vpt_align:hvminfo.vpt_align domid
 	| BuildPV pvinfo   ->
 		build_linux ~xc ~xs ~mem_max_kib:info.memory_max ~mem_target_kib:info.memory_target

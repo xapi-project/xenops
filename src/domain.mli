@@ -43,6 +43,7 @@ type build_hvm_info = {
 	acpi: bool;
 	nx: bool;
 	smbios_pt: bool;
+        smbios_oem_types_pt: string;
 	acpi_pt: bool;
 	viridian: bool;
 	shadow_multiplier: float;
@@ -126,7 +127,7 @@ val build_hvm: xc: Xc.handle -> xs: Xs.xsh -> mem_max_kib:Int64.t
             -> mem_target_kib:Int64.t -> video_ram_mib:int option -> shadow_multiplier:float
             -> vcpus:int -> kernel:string
             -> pae:bool -> apic:bool -> acpi:bool -> nx:bool
-            -> smbios_pt:bool -> acpi_pt:bool -> viridian:bool
+            -> smbios_pt:bool -> smbios_oem_types_pt:string -> acpi_pt:bool -> viridian:bool
             -> timeoffset:string -> timer_mode:int option -> hpet:int option -> vpt_align:int option -> domid
             -> domarch
 
