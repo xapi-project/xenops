@@ -19,7 +19,7 @@ open Stringext
 open Hashtblext
 open Pervasiveext
 
-type kind = Vif | Vbd | Tap | Pci
+type kind = Vif | Vbd | Tap | Pci | Vfb
 
 type devid = int
 (** Represents one end of a device *)
@@ -46,9 +46,9 @@ open D
 open Printf
 
 let string_of_kind = function
-  | Vif -> "vif" | Vbd -> "vbd" | Tap -> "tap" | Pci -> "pci"
+  | Vif -> "vif" | Vbd -> "vbd" | Tap -> "tap" | Pci -> "pci" | Vfb -> "vfb"
 let kind_of_string = function
-  | "vif" -> Vif | "vbd" -> Vbd | "tap" -> Tap | "pci" -> Pci
+  | "vif" -> Vif | "vbd" -> Vbd | "tap" -> Tap | "pci" -> Pci | "vfb" -> Vfb
   | x -> raise (Unknown_device_type x)
 
 let string_of_endpoint (x: endpoint) =

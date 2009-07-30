@@ -1039,15 +1039,41 @@ let hard_shutdown ~xs (x: device) =
 
 end
 
+module Vfb = struct
+
+let add ~xc ~xs ~hvm domid =
+	debug "Device.Vfb.add %d" domid;
+
+	let frontend = { domid = domid; kind = Vfb; devid = 0 } in
+	let backend = frontend in
+	let device = { backend = backend; frontend = frontend } in
+
+	let back = [] in
+	let front = [] in
+	Generic.add_device ~xs device back front;
+	()
+
+let hard_shutdown ~xs (x: device) =
+	debug "Device.Vfb.hard_shutdown %s" (string_of_device x);
+	()
+
+let clean_shutdown ~xs (x: device) =
+	debug "Device.Vfb.clean_shutdown %s" (string_of_device x);
+	()
+
+end
+
 let hard_shutdown ~xs (x: device) = match x.backend.kind with
   | Vif -> Vif.hard_shutdown ~xs x
   | Vbd | Tap -> Vbd.hard_shutdown ~xs x
   | Pci -> PCI.hard_shutdown ~xs x
+  | Vfb -> Vfb.hard_shutdown ~xs x
 
 let clean_shutdown ~xs (x: device) = match x.backend.kind with
   | Vif -> Vif.clean_shutdown ~xs x
   | Vbd | Tap -> Vbd.clean_shutdown ~xs x
   | Pci -> PCI.clean_shutdown ~xs x
+  | Vfb -> Vfb.clean_shutdown ~xs x
 
 let can_surprise_remove ~xs (x: device) = Generic.can_surprise_remove ~xs x
 
