@@ -1063,6 +1063,7 @@ type disp_opt =
 	| SDL of string (* X11 display *)
 
 type info = {
+	hvm: bool;
 	memory: int64;
 	boot: string;
 	serial: string;
@@ -1179,7 +1180,9 @@ let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 		  "-boot"; info.boot;
 		  "-serial"; info.serial;
 		  "-vcpus"; string_of_int info.vcpus;
-	          "-videoram"; string_of_int info.videoram; ]
+	          "-videoram"; string_of_int info.videoram;
+	          "-M"; (if info.hvm then "xenfv" else "xenpv");
+	]
 	   @ disp_options @ sound_options @ usb' @ (List.concat nics')
 	   @ (if info.acpi then [ "-acpi" ] else [])
 	   @ (if restore then [ "-loadvm"; restorefile ] else [])

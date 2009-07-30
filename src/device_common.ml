@@ -101,6 +101,7 @@ let device_of_backend (backend: endpoint) (domu: Xc.domid) =
 		   kind = (match backend.kind with
 			   | Vbd | Tap -> Vbd
 			   | Vif -> Vif
+			   | Vfb -> Vfb
 			   | Pci -> Pci);
 		   devid = backend.devid } in
   { backend = backend; frontend = frontend }

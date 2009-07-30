@@ -145,6 +145,7 @@ sig
 		| SDL of string (* X11 display *)
 
 	type info = {
+		hvm: bool;
 		memory: int64;
 		boot: string;
 		serial: string;
