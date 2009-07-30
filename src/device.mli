@@ -146,7 +146,7 @@ module Dm :
 sig
 	type disp_opt =
 		| NONE
-		| VNC of bool * int * string (* auto-allocate, port if previous false, keymap *)
+		| VNC of bool * string * int * string (* auto-allocate, bind address, port it !autoallocate, keymap *)
 		| SDL of string (* X11 display *)
 
 	type info = {

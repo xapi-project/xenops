@@ -1085,7 +1085,7 @@ module Dm = struct
 
 type disp_opt =
 	| NONE
-	| VNC of bool * int * string (* auto-allocate, port if previous false, keymap *)
+	| VNC of bool * string * int * string (* auto-allocate, bind address could be empty, port if auto-allocate false, keymap *)
 	| SDL of string (* X11 display *)
 
 type info = {
@@ -1187,10 +1187,10 @@ let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 		match info.disp with
 		| NONE                     -> [], false
 		| SDL (x11name)            -> [], false
-		| VNC (auto, port, keymap) ->
+		| VNC (auto, bindaddr, port, keymap) ->
 			if auto
 			then [ "-vncunused"; "-k"; keymap ], true
-			else [ "-vnc"; string_of_int port; "-k"; keymap ], true
+			else [ "-vnc"; bindaddr ^ ":" ^ string_of_int port; "-k"; keymap ], true
 		in
 	let sound_options =
 		match info.sound with
