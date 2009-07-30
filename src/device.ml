@@ -1048,8 +1048,14 @@ let add ~xc ~xs ~hvm domid =
 	let backend = frontend in
 	let device = { backend = backend; frontend = frontend } in
 
-	let back = [] in
-	let front = [] in
+	let back = [
+		"frontend-id", sprintf "%u" domid;
+		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
+	] in
+	let front = [
+		"backend-id", string_of_int 0;
+		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
+	] in
 	Generic.add_device ~xs device back front;
 	()
 
