@@ -137,6 +137,11 @@ sig
 	val bind : dev list -> unit
 end
 
+module Vfb :
+sig
+	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> Xc.domid -> unit
+end
+
 module Dm :
 sig
 	type disp_opt =
