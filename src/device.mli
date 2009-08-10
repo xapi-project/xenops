@@ -142,6 +142,11 @@ sig
 	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> ?protocol:protocol -> Xc.domid -> unit
 end
 
+module Vkb :
+sig
+	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> ?protocol:protocol -> Xc.domid -> unit
+end
+
 module Dm :
 sig
 	type disp_opt =

@@ -19,7 +19,7 @@ open Stringext
 open Hashtblext
 open Pervasiveext
 
-type kind = Vif | Vbd | Tap | Pci | Vfb
+type kind = Vif | Vbd | Tap | Pci | Vfb | Vkb
 
 type devid = int
 (** Represents one end of a device *)
@@ -46,9 +46,9 @@ open D
 open Printf
 
 let string_of_kind = function
-  | Vif -> "vif" | Vbd -> "vbd" | Tap -> "tap" | Pci -> "pci" | Vfb -> "vfb"
+  | Vif -> "vif" | Vbd -> "vbd" | Tap -> "tap" | Pci -> "pci" | Vfb -> "vfb" | Vkb -> "vkb"
 let kind_of_string = function
-  | "vif" -> Vif | "vbd" -> Vbd | "tap" -> Tap | "pci" -> Pci | "vfb" -> Vfb
+  | "vif" -> Vif | "vbd" -> Vbd | "tap" -> Tap | "pci" -> Pci | "vfb" -> Vfb | "vkb" -> Vkb
   | x -> raise (Unknown_device_type x)
 
 let string_of_endpoint (x: endpoint) =
@@ -100,9 +100,8 @@ let device_of_backend (backend: endpoint) (domu: Xc.domid) =
   let frontend = { domid = domu;
 		   kind = (match backend.kind with
 			   | Vbd | Tap -> Vbd
-			   | Vif -> Vif
-			   | Vfb -> Vfb
-			   | Pci -> Pci);
+			   | _ -> backend.kind
+			  );
 		   devid = backend.devid } in
   { backend = backend; frontend = frontend }
 

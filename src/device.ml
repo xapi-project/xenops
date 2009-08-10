@@ -1071,17 +1071,51 @@ let clean_shutdown ~xs (x: device) =
 
 end
 
+module Vkb = struct
+
+let add ~xc ~xs ~hvm ?(protocol=Protocol_Native) domid =
+	debug "Device.Vkb.add %d" domid;
+
+	let frontend = { domid = domid; kind = Vkb; devid = 0 } in
+	let backend = { domid = 0; kind = Vkb; devid = 0 } in
+	let device = { backend = backend; frontend = frontend } in
+
+	let back = [
+		"frontend-id", sprintf "%u" domid;
+		"online", "1";
+		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
+	] in
+	let front = [
+		"backend-id", string_of_int 0;
+		"protocol", (string_of_protocol protocol);
+		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
+	] in
+	Generic.add_device ~xs device back front;
+	()
+
+let hard_shutdown ~xs (x: device) =
+	debug "Device.Vkb.hard_shutdown %s" (string_of_device x);
+	()
+
+let clean_shutdown ~xs (x: device) =
+	debug "Device.Vkb.clean_shutdown %s" (string_of_device x);
+	()
+
+end
+
 let hard_shutdown ~xs (x: device) = match x.backend.kind with
   | Vif -> Vif.hard_shutdown ~xs x
   | Vbd | Tap -> Vbd.hard_shutdown ~xs x
   | Pci -> PCI.hard_shutdown ~xs x
   | Vfb -> Vfb.hard_shutdown ~xs x
+  | Vkb -> Vkb.hard_shutdown ~xs x
 
 let clean_shutdown ~xs (x: device) = match x.backend.kind with
   | Vif -> Vif.clean_shutdown ~xs x
   | Vbd | Tap -> Vbd.clean_shutdown ~xs x
   | Pci -> PCI.clean_shutdown ~xs x
   | Vfb -> Vfb.clean_shutdown ~xs x
+  | Vkb -> Vkb.clean_shutdown ~xs x
 
 let can_surprise_remove ~xs (x: device) = Generic.can_surprise_remove ~xs x
 
