@@ -1050,6 +1050,7 @@ let add ~xc ~xs ~hvm ?(protocol=Protocol_Native) domid =
 
 	let back = [
 		"frontend-id", sprintf "%u" domid;
+		"online", "1";
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 	] in
 	let front = [
