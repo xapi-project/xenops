@@ -1041,7 +1041,7 @@ end
 
 module Vfb = struct
 
-let add ~xc ~xs ~hvm domid =
+let add ~xc ~xs ~hvm ?(protocol=Protocol_Native) domid =
 	debug "Device.Vfb.add %d" domid;
 
 	let frontend = { domid = domid; kind = Vfb; devid = 0 } in
@@ -1054,6 +1054,7 @@ let add ~xc ~xs ~hvm domid =
 	] in
 	let front = [
 		"backend-id", string_of_int 0;
+		"protocol", (string_of_protocol protocol);
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 	] in
 	Generic.add_device ~xs device back front;

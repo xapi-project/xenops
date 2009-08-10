@@ -139,7 +139,7 @@ end
 
 module Vfb :
 sig
-	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> Xc.domid -> unit
+	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> ?protocol:protocol -> Xc.domid -> unit
 end
 
 module Dm :
