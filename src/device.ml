@@ -922,7 +922,7 @@ let add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt pcidevs domid devid =
 		"num_devs", string_of_int (List.length xsdevs);
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 		"msitranslate", string_of_int (msitranslate);
-                "pci_power_mgmt", string_of_int (pci_power_mgmt);
+		"pci_power_mgmt", string_of_int (pci_power_mgmt);
 	] and frontendlist = [
 		"backend-id", "0";
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
