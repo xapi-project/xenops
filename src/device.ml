@@ -834,6 +834,10 @@ type t = {
 
 type dev = int * int * int * int
 
+let string_of_dev dev =
+	let (domain, bus, slot, func) = dev in
+	sprintf "%04x:%02x:%02x.%02x" domain bus slot func
+
 exception Cannot_add of dev list * exn (* devices, reason *)
 exception Cannot_use_pci_with_no_pciback of t list
 
@@ -1037,6 +1041,22 @@ let hard_shutdown ~xs (x: device) =
 	debug "Device.Pci.hard_shutdown %s" (string_of_device x);
 	clean_shutdown ~xs x
 
+let signal_device_model ~xc ~xs domid cmd parameter =
+	debug "Device.Pci.signal_device_model domid=%d cmd=%s param=%s" domid cmd parameter;
+	let dom0 = xs.Xs.getdomainpath 0 in (* XXX: assume device model is in domain 0 *)
+	Xs.transaction xs (fun t ->
+		t.Xst.writev dom0 [ Printf.sprintf "device-model/%d/command" domid, cmd;
+				    Printf.sprintf "device-model/%d/parameter" domid, parameter ]
+	);
+	(* XXX: no response protocol *)
+	()
+
+let plug ~xc ~xs (domain, bus, dev, func) domid devid =
+	signal_device_model ~xc ~xs domid "pci-ins" (Printf.sprintf "%.4x:%.2x:%.2x.%.1x" domain bus dev func)
+
+let unplug ~xc ~xs (domain, bus, dev, func) domid devid =
+	signal_device_model ~xc ~xs domid "pci-rem" (Printf.sprintf "%.4x:%.2x:%.2x.%.1x" domain bus dev func)
+
 end
 
 module Vfb = struct
@@ -1169,21 +1189,26 @@ let unlink_logfile domid = Unix.unlink (logfile domid)
 (* Where qemu writes its port number *)
 let vnc_port_path domid = sprintf "/local/domain/%d/console/vnc-port" domid
 
+(* Where qemu writes its state and is signalled *)
+let device_model_path domid = sprintf "/local/domain/0/device-model/%d" domid
+
 let power_mgmt_path domid = sprintf "/local/domain/0/device-model/%d/xen_extended_power_mgmt" domid
 let oem_features_path domid = sprintf "/local/domain/0/device-model/%d/oem_features" domid
 let inject_sci_path domid = sprintf "/local/domain/0/device-model/%d/inject-sci" domid
 
-let signal ~xs ~domid cmd param retexpected =
-	let cmdpath = sprintf "/local/domain/0/device-model/%d" domid in
+let signal ~xs ~domid ?wait_for ?param cmd =
+	let cmdpath = device_model_path domid in
 	Xs.transaction xs (fun t ->
 		t.Xst.write (cmdpath ^ "/command") cmd;
 		match param with
 		| None -> ()
 		| Some param -> t.Xst.write (cmdpath ^ "/parameter") param
 	);
-	let pw = cmdpath ^ "/state" in
-	Watch.wait_for ~xs (Watch.value_to_become pw retexpected);
-	()
+	match wait_for with
+	| Some state ->
+		let pw = cmdpath ^ "/state" in
+		Watch.wait_for ~xs (Watch.value_to_become pw state)
+	| None -> ()
 
 (* Returns the allocated vnc port number *)
 let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
@@ -1311,6 +1336,11 @@ let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 let start ~xs ~dmpath ?timeout info domid = __start ~xs ~restore:false ~dmpath ?timeout info domid
 let restore ~xs ~dmpath ?timeout info domid = __start ~xs ~restore:true ~dmpath ?timeout info domid
 
+
+(* suspend/resume is a done by sending signals to qemu *)
+let suspend ~xs domid = signal ~xs ~domid "save" ~wait_for:"paused"
+let resume ~xs domid = signal ~xs ~domid "continue" ~wait_for:"running"
+
 (* Called by every domain destroy, even non-HVM *)
 let stop ~xs domid signal =
 	let qemu_pid_path = sprintf "/local/domain/%d/qemu-pid" domid in
@@ -1366,6 +1396,8 @@ let stop ~xs domid signal =
 			   core files that bugtool will pick up; the xapi init script cleans out this directory with "rm -rf" on boot *)
 			(try Unix.rmdir ("/var/xen/qemu/"^(string_of_int qemu_pid)) with _ -> ())
 		);
+		(try xs.Xs.rm (device_model_path domid) with _ -> ());
+
 		(* Even if it's already dead (especially if it's already dead!) inspect the logfile *)
 		begin try write_logfile_to_log domid
 		with _ ->

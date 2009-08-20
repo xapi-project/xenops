@@ -135,6 +135,8 @@ sig
 	       -> dev list -> Xc.domid -> int -> unit
 	val reset : xs:Xs.xsh -> device -> unit
 	val bind : dev list -> unit
+	val plug : xc:Xc.handle -> xs:Xs.xsh -> dev -> Xc.domid -> int -> unit
+	val unplug : xc:Xc.handle -> xs:Xs.xsh -> dev -> Xc.domid -> int -> unit
 end
 
 module Vfb :
@@ -178,10 +180,12 @@ sig
 
 	val vnc_port_path : Xc.domid -> string
 
-	val signal : xs:Xs.xsh -> domid:Xc.domid
-	          -> string -> string option -> string -> unit
+	val signal : xs:Xs.xsh -> domid:Xc.domid -> ?wait_for:string -> ?param:string
+	          -> string -> unit
 
 	val start : xs:Xs.xsh -> dmpath:string -> ?timeout:float -> info -> Xc.domid -> int
 	val restore : xs:Xs.xsh -> dmpath:string -> ?timeout:float -> info -> Xc.domid -> int
+	val suspend : xs:Xs.xsh -> Xc.domid -> unit
+	val resume : xs:Xs.xsh -> Xc.domid -> unit
 	val stop : xs:Xs.xsh -> Xc.domid -> int -> unit
 end

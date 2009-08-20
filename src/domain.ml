@@ -772,7 +772,7 @@ let suspend ~xc ~xs ~hvm domid fd flags ?(progress_callback = fun _ -> ()) do_su
 		do_suspend_callback ();
 		if hvm then (
 			debug "Suspending qemu-dm for domid %d" domid;
-			Device.Dm.stop ~xs domid Sys.sigusr1;
+			Device.Dm.suspend ~xs domid;
 		);
 		XenguestHelper.send cnx "done\n";
 
