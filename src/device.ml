@@ -1065,7 +1065,7 @@ let add ~xc ~xs ~hvm ?(protocol=Protocol_Native) domid =
 	debug "Device.Vfb.add %d" domid;
 
 	let frontend = { domid = domid; kind = Vfb; devid = 0 } in
-	let backend = { domid = 0; kind = Vkb; devid = 0 } in
+	let backend = { domid = 0; kind = Vfb; devid = 0 } in
 	let device = { backend = backend; frontend = frontend } in
 
 	let back = [
