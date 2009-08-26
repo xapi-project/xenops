@@ -631,15 +631,18 @@ let check_mac mac =
         with _ ->
 		raise (Invalid_Mac mac)
 
+let get_backend_dev ~xs (x: device) =
+        try
+		let path = Hotplug.get_hotplug_path x in
+		xs.Xs.read (path ^ "/vif")
+	with Xb.Noent ->
+		raise (Hotplug_script_expecting_field (x, "vif"))
+
 (** Plug in the backend of a guest's VIF in dom0. Note that a guest may disconnect and
     then reconnect their network interface: we have to re-run this code every time we
     see a hotplug online event. *)
 let plug ~xs ~netty ~mac ?(mtu=0) ?rate ?protocol (x: device) =
-	let backend_dev = try
-		let path = Hotplug.get_hotplug_path x in
-		xs.Xs.read (path ^ "/vif")
-	with Xb.Noent ->
-		raise (Hotplug_script_expecting_field (x, "vif")) in
+	let backend_dev = get_backend_dev xs x in
 
 	if mtu > 0 then
 		Netdev.set_mtu backend_dev mtu;

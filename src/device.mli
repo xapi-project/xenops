@@ -82,7 +82,7 @@ end
 module Vif :
 sig
 	exception Invalid_Mac of string
-
+	val get_backend_dev : xs:Xs.xsh -> device -> string
 	val add : xs:Xs.xsh -> devid:int -> netty:Netman.netty
 	       -> mac:string -> ?mtu:int -> ?rate:(int64 * int64) option
 	       -> ?protocol:protocol -> ?backend_domid:Xc.domid -> Xc.domid
