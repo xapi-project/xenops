@@ -892,7 +892,7 @@ let grant_access_resources xc domid resources v =
 		)
 	) resources
 
-let add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt pcidevs domid devid =
+let add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?(flrscript=None) pcidevs domid devid =
 	let pcidevs = List.map (fun (domain, bus, slot, func) ->
 		let (irq, resources, driver) = get_from_system domain bus slot func in
 		{ domain = domain; bus = bus; slot = slot; func = func;
@@ -919,6 +919,7 @@ let add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt pcidevs domid devid =
 		frontend = { domid = domid; kind = Pci; devid = devid };
 	} in
 
+	let others = (match flrscript with None -> [] | Some script -> [ ("script", script) ]) in
 	let xsdevs = List.mapi (fun i dev ->
 		sprintf "dev-%d" i, sprintf "%04x:%02x:%02x.%02x" dev.domain dev.bus dev.slot dev.func;
 	) pcidevs in
@@ -934,11 +935,11 @@ let add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt pcidevs domid devid =
 		"backend-id", "0";
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 	] in
-	Generic.add_device ~xs device (xsdevs @ backendlist) frontendlist;
+	Generic.add_device ~xs device (others @ xsdevs @ backendlist) frontendlist;
 	()
 
-let add ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt pcidevs domid devid =
-	try add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt pcidevs domid devid
+let add ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?flrscript pcidevs domid devid =
+	try add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?flrscript pcidevs domid devid
 	with exn ->
 		raise (Cannot_add (pcidevs, exn))
 
@@ -1020,11 +1021,25 @@ let enumerate_devs ~xs (x: device) =
 	) [] (Array.to_list devs))
 
 let reset ~xs (x: device) =
+	let backend_path = backend_path_of_device ~xs x in
+	let script = try Some (xs.Xs.read (backend_path ^ "/script")) with _ -> None in
+	let callscript =
+		match script with
+		| None -> (fun _ _ -> ())
+		| Some script ->
+			let f s devstr =
+				try ignore (Forkhelpers.execute_command_get_output ~withpath:true script [ s; devstr; ])
+				with _ -> ()
+				in
+			f
+		in
 	debug "Device.Pci.reset %s" (string_of_device x);
 	let pcidevs = enumerate_devs ~xs x in
 	List.iter (fun (domain, bus, slot, func) ->
 		let devstr = sprintf "%.4x:%.2x:%.2x.%.1x" domain bus slot func in
-		do_flr devstr
+		callscript "flr-pre" devstr;
+		do_flr devstr;
+		callscript "flr-post" devstr
 	) pcidevs;
 	()
 
