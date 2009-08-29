@@ -968,7 +968,17 @@ let write_string_to_file file s =
 
 let do_flr device =
 	let doflr = "/sys/bus/pci/drivers/pciback/do_flr" in
-	try write_string_to_file doflr device with _ -> ()
+	let script = "/opt/xensource/libexec/pci-flr" in
+	let callscript =
+                let f s devstr =
+	                try ignore (Forkhelpers.execute_command_get_output ~withpath:true script [ s; devstr; ])
+			        with _ -> ()
+			in
+			f
+		in
+        callscript "flr-pre" device;
+        ( try write_string_to_file doflr device with _ -> (); );
+        callscript "flr-post" device
 
 let bind pcidevs =
 	let bind_to_pciback device =
@@ -1021,25 +1031,11 @@ let enumerate_devs ~xs (x: device) =
 	) [] (Array.to_list devs))
 
 let reset ~xs (x: device) =
-	let backend_path = backend_path_of_device ~xs x in
-	let script = try Some (xs.Xs.read (backend_path ^ "/script")) with _ -> None in
-	let callscript =
-		match script with
-		| None -> (fun _ _ -> ())
-		| Some script ->
-			let f s devstr =
-				try ignore (Forkhelpers.execute_command_get_output ~withpath:true script [ s; devstr; ])
-				with _ -> ()
-				in
-			f
-		in
 	debug "Device.Pci.reset %s" (string_of_device x);
 	let pcidevs = enumerate_devs ~xs x in
 	List.iter (fun (domain, bus, slot, func) ->
 		let devstr = sprintf "%.4x:%.2x:%.2x.%.1x" domain bus slot func in
-		callscript "flr-pre" devstr;
-		do_flr devstr;
-		callscript "flr-post" devstr
+		do_flr devstr
 	) pcidevs;
 	()
 
