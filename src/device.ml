@@ -998,7 +998,8 @@ let bind pcidevs =
 		| None           ->
 			bind_to_pciback devstr
 		| Some "pciback" ->
-			debug "pci: device %s already bounded to pciback" devstr
+			debug "pci: device %s already bounded to pciback" devstr;
+                        do_flr devstr
 		| Some d         ->
 			debug "pci: unbounding device %s from driver %s" devstr d;
 			let f = s ^ "/driver/unbind" in
