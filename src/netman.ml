@@ -20,26 +20,25 @@ open D
 
 type netty = Bridge of string | DriverDomain | Nat
 
-let log_exn_and_raise name f =
+let log_exn name f =
 	try f ()
 	with exn ->
-		warn "exception during %s: %s" name (Printexc.to_string exn);
-		raise exn
+		warn "exception during %s: %s" name (Printexc.to_string exn)
 
 let online vif netty =
 	match netty with
 	| Bridge bridgename ->
 		let setup_bridge_port dev =
-			log_exn_and_raise "link.down" (fun () -> Netdev.Link.down dev);
-			log_exn_and_raise "link.arp" (fun () -> Netdev.Link.arp dev false);
-			log_exn_and_raise "link.multicast" (fun () -> Netdev.Link.multicast dev false);
-			log_exn_and_raise "link.set_addr" (fun () -> Netdev.Link.set_addr dev "fe:ff:ff:ff:ff:ff");
-			log_exn_and_raise "addr.flush" (fun () -> Netdev.Addr.flush dev);
+			log_exn "link.down" (fun () -> Netdev.Link.down dev);
+			log_exn "link.arp" (fun () -> Netdev.Link.arp dev false);
+			log_exn "link.multicast" (fun () -> Netdev.Link.multicast dev false);
+			log_exn "link.set_addr" (fun () -> Netdev.Link.set_addr dev "fe:ff:ff:ff:ff:ff");
+			log_exn "addr.flush" (fun () -> Netdev.Addr.flush dev);
 			in
 		let add_to_bridge br dev =
-			log_exn_and_raise "bridge.set_forward_delay" (fun () -> Netdev.Bridge.set_forward_delay br 0);
-			log_exn_and_raise "bridge.intf_add" (fun () -> Netdev.Bridge.intf_add br dev);
-			log_exn_and_raise "link.up" (fun () -> Netdev.Link.up dev);
+			log_exn "bridge.set_forward_delay" (fun () -> Netdev.Bridge.set_forward_delay br 0);
+			log_exn "bridge.intf_add" (fun () -> Netdev.Bridge.intf_add br dev);
+			log_exn "link.up" (fun () -> Netdev.Link.up dev);
 			in
 		debug "Adding %s to bridge %s" vif bridgename;
 		begin try
@@ -57,8 +56,8 @@ let offline vif netty =
 	| Bridge bridgename ->
 		debug "Removing %s from bridge %s" vif bridgename;
 		begin try
-			log_exn_and_raise "bridge.intf_del" (fun () -> Netdev.Bridge.intf_del bridgename vif);
-			log_exn_and_raise "link.down" (fun () -> Netdev.Link.down vif);
+			log_exn "bridge.intf_del" (fun () -> Netdev.Bridge.intf_del bridgename vif);
+			log_exn "link.down" (fun () -> Netdev.Link.down vif);
 		with _ ->
 			warn "interface %s already removed from bridge %s" vif bridgename;
 		end;
