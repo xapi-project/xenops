@@ -625,7 +625,8 @@ let domain_device_event ctx w v =
 	| Some (_, ExtraVm (uuid, node, value), _, _) ->
 		ctx.callback_devices ctx (-1) (Extra (uuid, node, value));
 	| Some (domid, ExtraLocal (node, value), _, _) ->
-		ctx.callback_devices ctx domid (Extra ("", node, value));
+	        let uuid = Uuid.string_of_uuid (Domain.get_uuid ctx.xc domid) in
+		ctx.callback_devices ctx domid (Extra (uuid, node, value));
 	| Some (_, Rtc (uuid, value), _, _) ->
 		ctx.callback_devices ctx (-1) (ChangeRtc (uuid, value))
 	| Some (_, IntMessage (uuid, name, priority, body), _, _) ->
