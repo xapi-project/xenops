@@ -43,7 +43,6 @@ let add_device ~xs device backend_list frontend_list =
 	let frontend_path = frontend_path_of_device ~xs device
 	and backend_path = backend_path_of_device ~xs device
 	and hotplug_path = Hotplug.get_hotplug_path device in
-
 	debug "adding device  B%d[%s]  F%d[%s]  H[%s]" device.backend.domid backend_path device.frontend.domid frontend_path hotplug_path;
 	Xs.transaction xs (fun t ->
 		begin try
@@ -761,6 +760,153 @@ let release ~xs (x: device) =
 	Hotplug.release ~xs x
 end
 
+(****************************************************************************************)
+(** VWIFs:                                                                              *)
+module Vwif = struct
+
+exception Invalid_Mac of string
+
+let check_mac mac =
+        try
+                if String.length mac <> 17 then failwith "mac length";
+	        Scanf.sscanf mac "%2x:%2x:%2x:%2x:%2x:%2x" (fun a b c d e f -> ());
+	        mac
+        with _ ->
+		raise (Invalid_Mac mac)
+
+let get_backend_dev ~xs (x: device) =
+        try
+		let path = Hotplug.get_hotplug_path x in
+		xs.Xs.read (path ^ "/vif")
+	with Xb.Noent ->
+		raise (Hotplug_script_expecting_field (x, "vif"))
+
+(** Plug in the backend of a guest's VIF in dom0. Note that a guest may disconnect and
+    then reconnect their network interface: we have to re-run this code every time we
+    see a hotplug online event. *)
+let plug ~xs ~netty ~mac ?(mtu=0) ?rate ?protocol (x: device) =
+	let backend_dev = get_backend_dev xs x in
+
+	if mtu > 0 then
+		Netdev.set_mtu backend_dev mtu;
+	Netman.online backend_dev netty;
+
+	(* set <backend>/hotplug-status = connected to interact nicely with the
+	   xs-xen.pq.hq:91e986b8e49f netback-wait-for-hotplug patch *)
+	xs.Xs.write (Hotplug.connected_node ~xs x) "connected";
+
+	x
+
+
+let add ~xs ~devid ~netty ~mac ?mtu ?(rate=None) ?(protocol=Protocol_Native) ?(backend_domid=0) domid =
+	debug "Device.Vwif.add domid=%d devid=%d mac=%s rate=%s" domid devid mac
+	      (match rate with None -> "none" | Some (a, b) -> sprintf "(%Ld,%Ld)" a b);
+	let frontend = { domid = domid; kind = Vwif; devid = devid } in
+	let backend = { domid = backend_domid; kind = Vif; devid = devid } in
+	let device = { backend = backend; frontend = frontend } in
+
+	let mac = check_mac mac in
+
+	let back_options =
+		match rate with
+		| None                              -> []
+		| Some (kbytes_per_s, timeslice_us) ->
+			let (^*) = Int64.mul and (^/) = Int64.div in
+			let timeslice_us =
+				if timeslice_us > 0L then
+					timeslice_us
+				else
+					50000L (* 50ms by default *) in
+			let bytes_per_interval = ((kbytes_per_s ^* 1024L) ^* timeslice_us)
+			                         ^/ 1000000L in
+			if bytes_per_interval > 0L && bytes_per_interval < 0xffffffffL then
+				[ "rate", sprintf "%Lu,%Lu" bytes_per_interval timeslice_us ]
+			else (
+				debug "VIF qos: invalid value for byte/interval: %Lu" bytes_per_interval;
+				[]
+			)
+		in
+
+	let back = [
+		"frontend-id", sprintf "%u" domid;
+		"online", "1";
+		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
+		"script", "/etc/xensource/scripts/vif";
+		"mac", mac;
+		"handle", string_of_int devid
+	] @ back_options in
+
+	let front_options =
+		if protocol <> Protocol_Native then
+			[ "protocol", string_of_protocol protocol; ]
+		else
+			[] in
+
+	let front = [
+		"backend-id", string_of_int backend_domid;
+		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
+		"handle", string_of_int devid;
+		"mac", mac;
+		"rssi", "-65";
+		"link-quality", "95";
+		"ssid", "XenWireless";
+	] @ front_options in
+
+
+	Generic.add_device ~xs device back front;
+	Hotplug.wait_for_plug ~xs device;
+	plug ~xs ~netty ~mac ?rate ?mtu device
+
+(** When hot-unplugging a device we ask nicely *)
+let request_closure ~xs (x: device) =
+	let backend_path = backend_path_of_device ~xs x in
+	let state_path = backend_path ^ "/state" in
+	Xs.transaction xs (fun t ->
+		let online_path = backend_path ^ "/online" in
+		debug "xenstore-write %s = 0" online_path;
+		t.Xst.write online_path "0";
+		let state = try Xenbus.of_string (t.Xst.read state_path) with _ -> Xenbus.Closed in
+		if state == Xenbus.Connected then (
+			debug "Device.del_device setting backend to Closing";
+			t.Xst.write state_path (Xenbus.string_of Xenbus.Closing);
+		)
+	)
+
+let unplug_watch ~xs (x: device) = Watch.map (fun () -> "") (Watch.key_to_disappear (Hotplug.status_node x))
+let error_watch ~xs (x: device) = Watch.value_to_appear (error_path_of_device ~xs x) 
+
+let clean_shutdown ~xs (x: device) =
+	debug "Device.Vwif.clean_shutdown %s" (string_of_device x);
+
+	request_closure ~xs x;
+	match Watch.wait_for ~xs (Watch.any_of [ `OK, unplug_watch ~xs x; `Failed, error_watch ~xs x ]) with
+	| `OK, _ ->
+	    (* Delete the trees (otherwise attempting to plug the device in again doesn't
+	       work. This also clears any stale error nodes. *)
+	    Generic.rm_device_state ~xs x
+	| `Failed, error ->
+	    debug "Device.Vwif.shutdown_common: read an error: %s" error;
+	    raise (Device_error (x, error))	
+
+let hard_shutdown ~xs (x: device) =
+	debug "Device.Vwif.hard_shutdown %s" (string_of_device x);
+
+	let backend_path = backend_path_of_device ~xs x in
+	let online_path = backend_path ^ "/online" in
+	debug "xenstore-write %s = 0" online_path;
+	xs.Xs.write online_path "0";
+	(* blow away the frontend *)
+	debug "Device.Vwif.hard_shutdown about to blow away frontend";
+	let frontend_path = frontend_path_of_device ~xs x in
+	xs.Xs.rm frontend_path;
+
+	ignore(Watch.wait_for ~xs (unplug_watch ~xs x))
+
+let release ~xs (x: device) =
+	debug "Device.Vwif.release %s" (string_of_device x);
+	Hotplug.release ~xs x
+end
+
 (*****************************************************************************)
 (** Vcpus:                                                                   *)
 module Vcpu = struct
@@ -1140,6 +1286,7 @@ end
 
 let hard_shutdown ~xs (x: device) = match x.backend.kind with
   | Vif -> Vif.hard_shutdown ~xs x
+  | Vwif -> Vwif.hard_shutdown ~xs x
   | Vbd | Tap -> Vbd.hard_shutdown ~xs x
   | Pci -> PCI.hard_shutdown ~xs x
   | Vfb -> Vfb.hard_shutdown ~xs x
@@ -1147,6 +1294,7 @@ let hard_shutdown ~xs (x: device) = match x.backend.kind with
 
 let clean_shutdown ~xs (x: device) = match x.backend.kind with
   | Vif -> Vif.clean_shutdown ~xs x
+  | Vwif -> Vwif.clean_shutdown ~xs x
   | Vbd | Tap -> Vbd.clean_shutdown ~xs x
   | Pci -> PCI.clean_shutdown ~xs x
   | Vfb -> Vfb.clean_shutdown ~xs x

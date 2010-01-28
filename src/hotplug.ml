@@ -93,7 +93,7 @@ let device_is_online ~xs (x: device) =
 
   match x.backend.kind with
   | Pci | Vfb | Vkb -> assert false (* PCI/Vfb backend doesn't create online node *)
-  | Vif -> backend_hotplug ()
+  | Vif | Vwif -> backend_hotplug ()
   | ( Vbd | Tap ) -> 
       if backend_request () 
       then not(backend_shutdown ())

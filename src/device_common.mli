@@ -15,7 +15,7 @@
  * GNU Lesser General Public License for more details.
  *)
 
-type kind = Vif | Vbd | Tap | Pci | Vfb | Vkb
+type kind = Vif | Vwif | Vbd | Tap | Pci | Vfb | Vkb
 
 type devid = int
 
