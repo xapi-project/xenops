@@ -180,7 +180,7 @@ sig
 		serial: string;
 		vcpus: int;
 		usb: string list;
-		nics: (string * string * string option) list;
+		nics: (string * string * string option * bool) list;
 		acpi: bool;
 		disp: disp_opt;
 		pci_emulations: string list;

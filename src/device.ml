@@ -1320,7 +1320,7 @@ type info = {
 	serial: string;
 	vcpus: int;
 	usb: string list;
-	nics: (string * string * string option) list;
+	nics: (string * string * string option * bool) list;
 	acpi: bool;
 	disp: disp_opt;
 	pci_emulations: string list;
@@ -1384,7 +1384,8 @@ let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 	(* qemu need a different id for every vlan, or things get very bad *)
 	let vlan_id = ref 0 in
 	let if_number = ref 0 in
-	let nics' = List.map (fun (mac, bridge, model) ->
+	let nics' = List.filter (fun (_,_,_,wireless) -> wireless = false) info.nics in
+	let nics' = List.map (fun (mac, bridge, model, _) ->
 		let modelstr =
 			match model with
 			| None   -> "rtl8139"
@@ -1396,7 +1397,7 @@ let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 		incr if_number;
 		incr vlan_id;
 		r
-	) info.nics in
+	) nics' in
 	let qemu_pid_path = xs.Xs.getdomainpath domid ^ "/qemu-pid" in
 
 	if info.power_mgmt <> 0 then begin
