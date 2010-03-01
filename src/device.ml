@@ -979,13 +979,24 @@ type t = {
 	irq: int;
 	resources: (int64 * int64 * int64) list;
 	driver: string;
+	guest_slot: int option;
 }
 
-type dev = int * int * int * int
+type dev = int * int * int * int * int option
 
 let string_of_dev dev =
-	let (domain, bus, slot, func) = dev in
-	sprintf "%04x:%02x:%02x.%02x" domain bus slot func
+	let (domain, bus, slot, func, slot_guest) = dev in
+	let at = match slot_guest with
+	| None -> ""
+	| Some slot -> sprintf "@%02x" slot
+	in
+	sprintf "%04x:%02x:%02x.%02x%s" domain bus slot func at
+
+let dev_of_string devstr =
+	try
+		Scanf.sscanf devstr "%04x:%02x:%02x.%1x@%02x" (fun a b c d e -> (a, b, c, d, Some e))
+	with Scanf.Scan_failure _ ->
+		Scanf.sscanf devstr "%04x:%02x:%02x.%1x" (fun a b c d -> (a, b, c, d, None))
 
 exception Cannot_add of dev list * exn (* devices, reason *)
 exception Cannot_use_pci_with_no_pciback of t list
@@ -1039,10 +1050,10 @@ let grant_access_resources xc domid resources v =
 	) resources
 
 let add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?(flrscript=None) pcidevs domid devid =
-	let pcidevs = List.map (fun (domain, bus, slot, func) ->
+	let pcidevs = List.map (fun (domain, bus, slot, func, guest_slot) ->
 		let (irq, resources, driver) = get_from_system domain bus slot func in
 		{ domain = domain; bus = bus; slot = slot; func = func;
-		  irq = irq; resources = resources; driver = driver }
+		  irq = irq; resources = resources; driver = driver; guest_slot = guest_slot }
 	) pcidevs in
 
 	let baddevs = List.filter (fun t -> t.driver <> "pciback") pcidevs in
@@ -1067,7 +1078,11 @@ let add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?(flrscript=None) pcide
 
 	let others = (match flrscript with None -> [] | Some script -> [ ("script", script) ]) in
 	let xsdevs = List.mapi (fun i dev ->
-		sprintf "dev-%d" i, sprintf "%04x:%02x:%02x.%02x" dev.domain dev.bus dev.slot dev.func;
+		let at = match dev.guest_slot with
+		| None      -> ""
+		| Some slot -> sprintf "@%02x" slot
+		in
+		sprintf "dev-%d" i, sprintf "%04x:%02x:%02x.%02x%s" dev.domain dev.bus dev.slot dev.func at;
 	) pcidevs in
 
 	let backendlist = [
@@ -1090,10 +1105,10 @@ let add ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?flrscript pcidevs domid devi
 		raise (Cannot_add (pcidevs, exn))
 
 let release ~xc ~xs ~hvm pcidevs domid devid =
-	let pcidevs = List.map (fun (domain, bus, slot, func) ->
+	let pcidevs = List.map (fun (domain, bus, slot, func, guest_slot) ->
 		let (irq, resources, driver) = get_from_system domain bus slot func in
 		{ domain = domain; bus = bus; slot = slot; func = func;
-		  irq = irq; resources = resources; driver = driver }
+		  irq = irq; resources = resources; driver = driver; guest_slot = guest_slot }
 	) pcidevs in
 
 	let baddevs = List.filter (fun t -> t.driver <> "pciback") pcidevs in
@@ -1134,7 +1149,7 @@ let bind pcidevs =
 		write_string_to_file bind device;
 		do_flr device;
 		in
-	List.iter (fun (domain, bus, slot, func) ->
+	List.iter (fun (domain, bus, slot, func, _) ->
 		let devstr = sprintf "%.4x:%.2x:%.2x.%.1x" domain bus slot func in
 		let s = "/sys/bus/pci/devices/" ^ devstr in
 		let driver =
@@ -1166,7 +1181,7 @@ let enumerate_devs ~xs (x: device) =
 	do
 		try
 			let devstr = xs.Xs.read (backend_path ^ "/dev-" ^ (string_of_int i)) in
-			let dev = Scanf.sscanf devstr "%04x:%02x:%02x.%1x" (fun a b c d -> (a, b, c, d)) in
+			let dev = dev_of_string devstr in
 			devs.(i) <- Some dev
 		with _ ->
 			()
@@ -1180,7 +1195,7 @@ let enumerate_devs ~xs (x: device) =
 let reset ~xs (x: device) =
 	debug "Device.Pci.reset %s" (string_of_device x);
 	let pcidevs = enumerate_devs ~xs x in
-	List.iter (fun (domain, bus, slot, func) ->
+	List.iter (fun (domain, bus, slot, func, _) ->
 		let devstr = sprintf "%.4x:%.2x:%.2x.%.1x" domain bus slot func in
 		do_flr devstr
 	) pcidevs;
@@ -1212,11 +1227,11 @@ let signal_device_model ~xc ~xs domid cmd parameter =
 	(* XXX: no response protocol *)
 	()
 
-let plug ~xc ~xs (domain, bus, dev, func) domid devid =
-	signal_device_model ~xc ~xs domid "pci-ins" (Printf.sprintf "%.4x:%.2x:%.2x.%.1x" domain bus dev func)
+let plug ~xc ~xs device domid devid =
+	signal_device_model ~xc ~xs domid "pci-ins" (string_of_dev device)
 
-let unplug ~xc ~xs (domain, bus, dev, func) domid devid =
-	signal_device_model ~xc ~xs domid "pci-rem" (Printf.sprintf "%.4x:%.2x:%.2x.%.1x" domain bus dev func)
+let unplug ~xc ~xs device domid devid =
+	signal_device_model ~xc ~xs domid "pci-rem" (string_of_dev device)
 
 end
 

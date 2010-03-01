@@ -140,8 +140,12 @@ sig
 		irq: int;
 		resources: (int64 * int64 * int64) list;
 		driver: string;
+		guest_slot: int option;
 	}
-	type dev = int * int * int * int
+	type dev = int * int * int * int * int option
+
+	val dev_of_string : string -> dev
+	val string_of_dev : dev -> string
 
 	exception Cannot_add of (dev list) * exn
 	exception Cannot_use_pci_with_no_pciback of t list
