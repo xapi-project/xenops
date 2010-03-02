@@ -1299,6 +1299,34 @@ let clean_shutdown ~xs (x: device) =
 
 end
 
+module V4V = struct
+
+let add ~xc ~xs ~hvm domid =
+	debug "Device.V4V.add %d" domid;
+
+	let frontend = { domid = domid; kind = V4V; devid = 0 } in
+	let backend  = { domid = 0    ; kind = V4V; devid = 0 } in
+	let device   = { backend = backend; frontend = frontend } in
+	let back = [
+		"frontend-id", sprintf "%u" domid;
+		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
+	] in
+	let front = [
+		"backend-id", string_of_int 0;
+		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
+	] in
+	Generic.add_device ~xs device back front;
+	()
+
+let hard_shutdown ~xs (x: device) =
+	debug "Device.V4V.hard_shutdown %s" (string_of_device x);
+	()
+
+let clean_shutdown ~xs (x: device) =
+	debug "Device.V4V.clean_shutdown %s" (string_of_device x);
+	()
+end
+
 let hard_shutdown ~xs (x: device) = match x.backend.kind with
   | Vif -> Vif.hard_shutdown ~xs x
   | Vwif -> Vwif.hard_shutdown ~xs x
@@ -1306,6 +1334,7 @@ let hard_shutdown ~xs (x: device) = match x.backend.kind with
   | Pci -> PCI.hard_shutdown ~xs x
   | Vfb -> Vfb.hard_shutdown ~xs x
   | Vkb -> Vkb.hard_shutdown ~xs x
+  | V4V -> V4V.hard_shutdown ~xs x
 
 let clean_shutdown ~xs (x: device) = match x.backend.kind with
   | Vif -> Vif.clean_shutdown ~xs x
@@ -1314,6 +1343,7 @@ let clean_shutdown ~xs (x: device) = match x.backend.kind with
   | Pci -> PCI.clean_shutdown ~xs x
   | Vfb -> Vfb.clean_shutdown ~xs x
   | Vkb -> Vkb.clean_shutdown ~xs x
+  | V4V -> V4V.clean_shutdown ~xs x
 
 let can_surprise_remove ~xs (x: device) = Generic.can_surprise_remove ~xs x
 
