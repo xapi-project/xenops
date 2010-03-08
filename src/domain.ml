@@ -118,6 +118,7 @@ let make ~xc ~xs info uuid =
 		let dom_path = xs.Xs.getdomainpath domid in
 		let vm_path = "/vm/" ^ (Uuid.to_string uuid) in
 		let vss_path = "/vss/" ^ (Uuid.to_string uuid) in
+		let uuid_path = "/uuid" in
 		let roperm = Xenbus.roperm_for_guest domid in
 		let rwperm = Xenbus.rwperm_for_guest domid in
 		debug "Regenerating the xenstored tree under: [%s]" dom_path;
@@ -136,9 +137,14 @@ let make ~xc ~xs info uuid =
 			t.Xst.mkdir vss_path;
 			t.Xst.setperms vss_path rwperm;
 
+			t.Xst.rm uuid_path;
+			t.Xst.mkdir uuid_path;
+			t.Xst.setperms uuid_path roperm;
+
 			t.Xst.write (dom_path ^ "/vm") vm_path;
 			t.Xst.write (dom_path ^ "/vss") vss_path;
 			t.Xst.write (dom_path ^ "/name") name;
+			t.Xst.write (dom_path ^ "/uuid") (Uuid.to_string uuid);
 
 			(* create cpu and memory directory with read only perms *)
 			List.iter (fun dir ->
