@@ -150,6 +150,9 @@ sig
 	exception Cannot_add of (dev list) * exn
 	exception Cannot_use_pci_with_no_pciback of t list
 
+	val passthrough_io : xc:Xc.handle -> Xc.domid -> (int * int) -> bool -> unit
+	val passthrough_mmio : xc:Xc.handle -> Xc.domid -> (int64 * int64) -> bool -> unit
+
 	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> msitranslate:int
 	       -> pci_power_mgmt:int -> ?flrscript:(string option) -> dev list -> Xc.domid -> int -> unit
 	val release : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool

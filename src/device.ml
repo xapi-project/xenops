@@ -1029,6 +1029,25 @@ let get_from_system domain bus slot func =
 		with _ -> "" in
 	irq, resources, driver
 
+let passthrough_mmio ~xc domid (startreg, endreg) enable =
+	if endreg < startreg then
+		failwith "mmio end region invalid";
+	let action = if enable then "add" else "remove" in
+	let mem_to_pfn m = Int64.to_nativeint (Int64.div m 4096L) in
+	let first_pfn = mem_to_pfn startreg and end_pfn = mem_to_pfn endreg in
+	let nr_pfns = Nativeint.add (Nativeint.sub end_pfn first_pfn) 1n in
+
+	debug "mmio %s %Lx-%Lx" action startreg endreg;
+	Xc.domain_iomem_permission xc domid first_pfn nr_pfns enable
+
+let passthrough_io ~xc domid (startport, endport) enable =
+	if endport < startport then
+		failwith "io end port invalid";
+	let action = if enable then "add" else "remove" in
+	let nr_ports = endport - startport + 1 in
+	debug "mmio %s %x-%x" action startport endport;
+	Xc.domain_ioport_permission xc domid startport nr_ports enable
+
 let grant_access_resources xc domid resources v =
 	let action = if v then "add" else "remove" in
 	let constant_PCI_BAR_IO = 0x01L in
