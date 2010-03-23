@@ -1328,7 +1328,7 @@ let add ~xc ~xs ~hvm domid =
 	let device   = { backend = backend; frontend = frontend } in
 	let back = [
 		"frontend-id", sprintf "%u" domid;
-		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
+		"state", string_of_int (Xenbus.int_of Xenbus.Unknown);
 	] in
 	let front = [
 		"backend-id", string_of_int 0;
