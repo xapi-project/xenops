@@ -151,19 +151,15 @@ let devnb_of_path devpath =
 exception Mount_failure of string * string * string
 
 (* call tapdisk2 and return the device path *)
-let mount ty path keydir =
+let mount ty path =
 	let string_of_unix_process process =
 		match process with
 		| Unix.WEXITED i -> sprintf "exited(%d)" i
 		| Unix.WSIGNALED i -> sprintf "signaled(%d)" i
 		| Unix.WSTOPPED i -> sprintf "stopped(%d)" i
 		in
-	let env = match keydir with
-		| None     -> [||]
-		| Some dir -> [| "KEYDIR="^dir |] )
-	in
 	let out, log =
-		try Forkhelpers.execute_command_get_output ~withpath:true ~env "/usr/sbin/tapdisk2"
+		try Forkhelpers.execute_command_get_output ~withpath:true "/usr/sbin/tapdisk2"
 	                                        [ "-n"; sprintf "%s:%s" ty path; ]
 		with Forkhelpers.Spawn_internal_error (log, output, status) ->
 			let s = sprintf "output=%S status=%s" output (string_of_unix_process status) in
