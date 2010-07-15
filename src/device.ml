@@ -160,7 +160,7 @@ let mount ty path keydir =
 		in
 	let env = match keydir with
 		| None     -> [||]
-		| Some dir -> [| "KEYDIR="^dir |] )
+		| Some dir -> [| "KEYDIR="^dir |]
 	in
 	let out, log =
 		try Forkhelpers.execute_command_get_output ~withpath:true ~env "/usr/sbin/tapdisk2"
