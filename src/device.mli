@@ -28,7 +28,7 @@ module Tap2 :
 sig
 	exception Mount_failure of string * string * string
 
-	val mount : string -> string -> string
+	val mount : string -> string -> string option -> string
 	val unmount : string -> unit
 end
 
