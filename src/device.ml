@@ -1151,7 +1151,6 @@ let write_string_to_file file s =
 	Unixext.with_file file [ Unix.O_WRONLY ] 0o640 fn_write_string
 
 let do_flr device =
-	let doflr = "/sys/bus/pci/drivers/pciback/do_flr" in
 	let script = "/opt/xensource/libexec/pci-flr" in
 	let callscript =
                 let f s devstr =
@@ -1160,9 +1159,7 @@ let do_flr device =
 			in
 			f
 		in
-        callscript "flr-pre" device;
-        ( try write_string_to_file doflr device with _ -> (); );
-        callscript "flr-post" device
+        callscript "" device
 
 let bind pcidevs =
 	let bind_to_pciback device =
