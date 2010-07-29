@@ -649,7 +649,7 @@ let plug ~xs ~netty ~mac ?(mtu=0) ?rate ?protocol (x: device) =
 
 	if mtu > 0 then
 		Netdev.set_mtu backend_dev mtu;
-	Netman.online backend_dev netty;
+	Netman.online ~xs (backend_path_of_device ~xs x) backend_dev netty;
 
 	(* set <backend>/hotplug-status = connected to interact nicely with the
 	   xs-xen.pq.hq:91e986b8e49f netback-wait-for-hotplug patch *)
@@ -793,7 +793,7 @@ let plug ~xs ~netty ~mac ?(mtu=0) ?rate ?protocol (x: device) =
 
 	if mtu > 0 then
 		Netdev.set_mtu backend_dev mtu;
-	Netman.online backend_dev netty;
+	Netman.online ~xs (backend_path_of_device ~xs x) backend_dev netty;
 
 	(* set <backend>/hotplug-status = connected to interact nicely with the
 	   xs-xen.pq.hq:91e986b8e49f netback-wait-for-hotplug patch *)

@@ -18,14 +18,14 @@ module D = Debug.Debugger(struct let name = "netman" end)
 open D
 
 
-type netty = Bridge of string | DriverDomain | Nat
+type netty = Bridge of string | DriverDomain of string | Nat
 
 let log_exn name f =
 	try f ()
 	with exn ->
 		warn "exception during %s: %s" name (Printexc.to_string exn)
 
-let online vif netty =
+let online ~xs backend_path vif netty =
 	match netty with
 	| Bridge bridgename ->
 		let setup_bridge_port dev =
@@ -47,7 +47,8 @@ let online vif netty =
 		with exn ->
 			warn "exception in netman.online ignoring: %s" (Printexc.to_string exn)
 		end;
-	| DriverDomain -> ()
+	| DriverDomain s ->
+		xs.Xs.write (backend_path ^ "/bridge") s
 	| _ ->
 		failwith "not supported yet"
 
@@ -61,6 +62,6 @@ let offline vif netty =
 		with _ ->
 			warn "interface %s already removed from bridge %s" vif bridgename;
 		end;
-	| DriverDomain -> ()
+	| DriverDomain s -> ()
 	| _                 ->
 		failwith "not supported yet"
