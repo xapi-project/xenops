@@ -143,28 +143,25 @@ end
 (****************************************************************************************)
 module Tap2 = struct
 
-let devnb_of_path devpath =
-	let name = Filename.basename devpath in
-	let number = String.sub name 6 (String.length name - 6) in
-	number
-
 exception Mount_failure of string * string * string
+exception Unmount_failure of string * string
+
+let string_of_unix_process process =
+	match process with
+	| Unix.WEXITED i -> sprintf "exited(%d)" i
+	| Unix.WSIGNALED i -> sprintf "signaled(%d)" i
+	| Unix.WSTOPPED i -> sprintf "stopped(%d)" i
 
 (* call tapdisk2 and return the device path *)
 let mount ty path keydir =
-	let string_of_unix_process process =
-		match process with
-		| Unix.WEXITED i -> sprintf "exited(%d)" i
-		| Unix.WSIGNALED i -> sprintf "signaled(%d)" i
-		| Unix.WSTOPPED i -> sprintf "stopped(%d)" i
-		in
-	let env = match keydir with
-		| None     -> [||]
+	let env = Array.append [| "TAPDISK2=/usr/sbin/tapdisk2" |] ( match keydir with
+		| None     -> [| |]
 		| Some dir -> [| "TAPDISK2_CRYPTO_KEYDIR="^dir |]
+		)
 	in
 	let out, log =
-		try Forkhelpers.execute_command_get_output ~withpath:true ~env "/usr/sbin/tapdisk2"
-	                                        [ "-n"; sprintf "%s:%s" ty path; ]
+		try Forkhelpers.execute_command_get_output ~withpath:true ~env "/usr/sbin/tap-ctl"
+	                                        [ "create"; "-a"; sprintf "%s:%s" ty path; ]
 		with Forkhelpers.Spawn_internal_error (log, output, status) ->
 			let s = sprintf "output=%S status=%s" output (string_of_unix_process status) in
 			raise (Mount_failure (ty, path, s))
@@ -174,12 +171,13 @@ let mount ty path keydir =
 	device_path
 
 let unmount device =
-	let tapdev = devnb_of_path device in
-	let path = sprintf "/sys/class/blktap2/blktap%s/remove" tapdev in
-	Unixext.with_file path [ Unix.O_WRONLY ] 0o640 (fun fd ->
-		let (_: int) = Unix.write fd "1" 0 1 in
+	info "tap2: unmounting %s" device;
+	try Forkhelpers.execute_command_get_output ~withpath:true "/usr/sbin/tap-ctl"
+					[ "destroy"; "-d"; device; ];
 		()
-	)
+	with Forkhelpers.Spawn_internal_error (log, output, status) ->
+		let s = sprintf "output=%S status=%s" output (string_of_unix_process status) in
+		raise (Unmount_failure (device, s))
 
 end
 
