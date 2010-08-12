@@ -848,10 +848,7 @@ let add ~xs ~devid ~netty ~mac ?mtu ?(rate=None) ?(protocol=Protocol_Native) ?(b
 		"backend-id", string_of_int backend_domid;
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 		"handle", string_of_int devid;
-		"mac", mac;
-		"rssi", "-65";
-		"link-quality", "95";
-		"ssid", "XenWireless";
+		"mac", mac
 	] @ front_options in
 
 
@@ -1345,23 +1342,25 @@ let clean_shutdown ~xs (x: device) =
 	()
 end
 
-let hard_shutdown ~xs (x: device) = match x.backend.kind with
-  | Vif -> Vif.hard_shutdown ~xs x
-  | Vwif -> Vwif.hard_shutdown ~xs x
-  | Vbd | Tap -> Vbd.hard_shutdown ~xs x
-  | Pci -> PCI.hard_shutdown ~xs x
-  | Vfb -> Vfb.hard_shutdown ~xs x
-  | Vkb -> Vkb.hard_shutdown ~xs x
-  | V4V -> V4V.hard_shutdown ~xs x
+let hard_shutdown ~xs (x: device) = match (x.backend.kind, x.frontend.kind) with
+  | Vif,_ -> Vif.hard_shutdown ~xs x
+  | Vwif,_ -> Vwif.hard_shutdown ~xs x
+  | _,Vwif -> Vwif.hard_shutdown ~xs x
+  | Vbd,_ | Tap,_ -> Vbd.hard_shutdown ~xs x
+  | Pci,_ -> PCI.hard_shutdown ~xs x
+  | Vfb,_ -> Vfb.hard_shutdown ~xs x
+  | Vkb,_ -> Vkb.hard_shutdown ~xs x
+  | V4V,_ -> V4V.hard_shutdown ~xs x
 
-let clean_shutdown ~xs (x: device) = match x.backend.kind with
-  | Vif -> Vif.clean_shutdown ~xs x
-  | Vwif -> Vwif.clean_shutdown ~xs x
-  | Vbd | Tap -> Vbd.clean_shutdown ~xs x
-  | Pci -> PCI.clean_shutdown ~xs x
-  | Vfb -> Vfb.clean_shutdown ~xs x
-  | Vkb -> Vkb.clean_shutdown ~xs x
-  | V4V -> V4V.clean_shutdown ~xs x
+let clean_shutdown ~xs (x: device) = match (x.backend.kind, x.frontend.kind) with
+  | Vif,_ -> Vif.clean_shutdown ~xs x
+  | Vwif,_ -> Vwif.clean_shutdown ~xs x
+  | _,Vwif -> Vwif.clean_shutdown ~xs x
+  | Vbd,_ | Tap,_ -> Vbd.clean_shutdown ~xs x
+  | Pci,_ -> PCI.clean_shutdown ~xs x
+  | Vfb,_ -> Vfb.clean_shutdown ~xs x
+  | Vkb,_ -> Vkb.clean_shutdown ~xs x
+  | V4V,_ -> V4V.clean_shutdown ~xs x
 
 let can_surprise_remove ~xs (x: device) = Generic.can_surprise_remove ~xs x
 
