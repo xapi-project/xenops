@@ -835,6 +835,9 @@ let vcpu_affinity_get ~xc domid vcpu =
 	for i = 0 to 63 do cpumap.(i) <- bit_isset bitmap i done;
 	cpumap
 
+let set_cores_per_socket ~xc domid cores_per_socket =
+	Xc.domain_set_cores_per_socket xc domid cores_per_socket
+
 let get_uuid ~xc domid =
 	Uuid.uuid_of_int_array (Xc.domain_getinfo xc domid).Xc.handle
 

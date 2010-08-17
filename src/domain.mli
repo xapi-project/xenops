@@ -171,6 +171,9 @@ val vcpu_affinity_set: xc: Xc.handle -> domid -> int -> bool array -> unit
 (** Get Cpu affinity of some vcpus of a domain *)
 val vcpu_affinity_get: xc: Xc.handle -> domid -> int -> bool array
 
+(** Set number of cpu cores per socket *)
+val set_cores_per_socket: xc: Xc.handle -> domid -> int -> unit
+
 (** Get the uuid from a specific domain *)
 val get_uuid: xc: Xc.handle -> Xc.domid -> [`domain] Uuid.t
 
