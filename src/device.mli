@@ -179,8 +179,12 @@ sig
 	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> Xc.domid -> unit
 end
 
+module Console :
 module Dm :
 sig
+	type consback = XenConsoled | Ioemu
+	val add : xs:Xs.xsh -> hvm:bool -> ?protocol:protocol -> ?backend_domid:Xc.domid
+               -> output:string -> consback:consback -> devid:int -> Xc.domid -> unit
 	type disp_opt =
 		| NONE
 		| VNC of bool * string * int * string (* auto-allocate, bind address, port it !autoallocate, keymap *)

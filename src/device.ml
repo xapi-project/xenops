@@ -1342,6 +1342,51 @@ let clean_shutdown ~xs (x: device) =
 	()
 end
 
+module Console = struct
+
+type consback = XenConsoled | Ioemu
+exception Invalid_console_type
+
+let add ~xs ~hvm ?(protocol=Protocol_Native) ?(backend_domid=0) ~output ~consback ~devid domid =
+	debug "Device.Console.add %d" domid;
+	if not hvm && consback == Ioemu
+		then raise Invalid_console_type;
+
+	let frontend = { domid = domid; kind = Console; devid = devid } in
+	let backend = { domid = 0; kind = Console; devid = devid } in
+	let device = { backend = backend; frontend = frontend } in
+
+	let back = [
+		"frontend-id", sprintf "%u" domid;
+		"online", "1";
+		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
+		"domain", "some name";
+		"protocol", "vt100";
+	] in
+	(* with devid == 0 add to console not device/console *)
+	let front = if devid > 0 then
+	[
+		"backend-id", string_of_int backend_domid;
+		"protocol", (string_of_protocol protocol);
+		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
+		"limit", "0";
+		"protocol", "vt100";
+		"type", if consback = XenConsoled then "xenconsoled" else "ioemu";
+		"output", output;
+	] else [] in
+	Generic.add_device ~xs device back front;
+	()
+
+let hard_shutdown ~xs (x: device) =
+	debug "Device.Console.hard_shutdown %s" (string_of_device x);
+	()
+
+let clean_shutdown ~xs (x: device) =
+	debug "Device.Console.clean_shutdown %s" (string_of_device x);
+	()
+
+end
+
 let hard_shutdown ~xs (x: device) = match (x.backend.kind, x.frontend.kind) with
   | Vif,_ -> Vif.hard_shutdown ~xs x
   | Vwif,_ -> Vwif.hard_shutdown ~xs x
@@ -1351,6 +1396,7 @@ let hard_shutdown ~xs (x: device) = match (x.backend.kind, x.frontend.kind) with
   | Vfb,_ -> Vfb.hard_shutdown ~xs x
   | Vkb,_ -> Vkb.hard_shutdown ~xs x
   | V4V,_ -> V4V.hard_shutdown ~xs x
+  | Console,_ -> Console.hard_shutdown ~xs x
 
 let clean_shutdown ~xs (x: device) = match (x.backend.kind, x.frontend.kind) with
   | Vif,_ -> Vif.clean_shutdown ~xs x
@@ -1361,6 +1407,7 @@ let clean_shutdown ~xs (x: device) = match (x.backend.kind, x.frontend.kind) wit
   | Vfb,_ -> Vfb.clean_shutdown ~xs x
   | Vkb,_ -> Vkb.clean_shutdown ~xs x
   | V4V,_ -> V4V.clean_shutdown ~xs x
+  | Console,_ -> Console.clean_shutdown ~xs x
 
 let can_surprise_remove ~xs (x: device) = Generic.can_surprise_remove ~xs x
 
