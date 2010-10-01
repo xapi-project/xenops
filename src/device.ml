@@ -994,7 +994,7 @@ let string_of_dev dev =
 let dev_of_string devstr =
 	try
 		Scanf.sscanf devstr "%04x:%02x:%02x.%1x@%02x" (fun a b c d e -> (a, b, c, d, Some e))
-	with Scanf.Scan_failure _ ->
+	with _ ->
 		Scanf.sscanf devstr "%04x:%02x:%02x.%1x" (fun a b c d -> (a, b, c, d, None))
 
 exception Cannot_add of dev list * exn (* devices, reason *)
@@ -1129,7 +1129,7 @@ let release ~xc ~xs ~hvm pcidevs domid devid =
 		  irq = irq; resources = resources; driver = driver; guest_slot = guest_slot }
 	) pcidevs in
 
-	let baddevs = List.filter (fun t -> t.driver <> "pciback") pcidevs in
+	let baddevs = List.filter (fun t -> t.driver <> "pciback" && t.driver <> "") pcidevs in
 	if List.length baddevs > 0 then (
 		raise (Cannot_use_pci_with_no_pciback baddevs);
 	);
