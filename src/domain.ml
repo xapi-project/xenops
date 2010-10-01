@@ -136,7 +136,7 @@ let destroy ?(preserve_xs_vm=false) ~xc ~xs domid =
 	log_exn_continue "Xc.domain_destroy" (Xc.domain_destroy xc) domid;
 
 	log_exn_continue "Error stoping device-model, already dead ?"
-	                 (fun () -> Device.Dm.stop ~xs domid Sys.sigterm) ();
+	                 (fun () -> Dm.stop ~xs domid Sys.sigterm) ();
 
 	(* Forcibly shutdown every backend *)
 	List.iter (fun device ->
@@ -278,7 +278,7 @@ let suspend ~xc ~xs ~hvm domid fd flags ?(progress_callback = fun _ -> ()) do_su
 		do_suspend_callback ();
 		if hvm then (
 			debug "Suspending qemu-dm for domid %d" domid;
-			Device.Dm.suspend ~xs domid;
+			Dm.suspend ~xs domid;
 		);
 		XenguestHelper.send cnx "done\n";
 
