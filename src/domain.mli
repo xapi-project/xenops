@@ -69,6 +69,10 @@ type build_info = {
 	priv: builder_spec_info;
 }
 
+type stubdom_info = {
+	stubdom_target: int;
+}
+
 type domarch = Arch_HVM | Arch_native | Arch_X64 | Arch_X32
 
 val string_of_domarch : domarch -> string
@@ -161,6 +165,8 @@ val suspend: xc: Xc.handle -> xs: Xs.xsh -> hvm: bool -> domid
           -> Unix.file_descr -> suspend_flag list
           -> ?progress_callback: (float -> unit)
           -> (unit -> unit) -> unit
+
+val make_stubdom: xc: Xc.handle -> xs: Xs.xsh -> stubdom_info -> [`domain] Uuid.t -> domid
 
 (** send a s3resume event to a domain *)
 val send_s3resume: xc: Xc.handle -> domid -> unit
