@@ -54,6 +54,23 @@ sig
 	val device_major_minor : string -> int * int
 	val major_minor_to_device : int * int -> string
 
+	type info = {
+		mode: mode;
+		virtpath: string;
+		phystype: physty;
+		physpath: string;
+		dev_type: devty;
+		unpluggable: bool;
+		info_pt: bool;
+		extra_backend_keys: (string*string) list option;
+	}
+
+	val add_struct : xs:Xs.xsh -> hvm:bool
+	              -> ?protocol:protocol
+	              -> ?backend_domid:Xc.domid
+	              -> info -> Xc.domid
+	              -> device
+
 	val add : xs:Xs.xsh -> hvm:bool -> mode:mode
 	       -> virtpath:string -> phystype:physty -> physpath:string
 	       -> dev_type:devty

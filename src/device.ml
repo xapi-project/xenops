@@ -445,15 +445,25 @@ let add_disk_info back_tbl physpath =
 		)
 	with e ->
 		warn "Caught exception during SCSI inquiry: %s" (Printexc.to_string e)
-	
+
+type info = {
+	mode: mode;
+	virtpath: string;
+	phystype: physty;
+	physpath: string;
+	dev_type: devty;
+	unpluggable: bool;
+	info_pt: bool;
+	extra_backend_keys: (string*string) list option;
+}
+
 (* Add the VBD to the domain, taking care of allocating any resources (specifically
    loopback mounts). When this command returns, the device is ready. (This isn't as
    concurrent as xend-- xend allocates loopdevices via hotplug in parallel and then
    performs a 'waitForDevices') *)
-let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable ~diskinfo_pt
-        ?(protocol=Protocol_Native) ?extra_backend_keys ?(backend_domid=0) domid  =
+let add_struct ~xs ~hvm ?(protocol=Protocol_Native) ?(backend_domid=0) diskinfo domid  =
 	let back_tbl = Hashtbl.create 16 and front_tbl = Hashtbl.create 16 in
-	let devid = device_number virtpath in
+	let devid = device_number diskinfo.virtpath in
 
 	let backend_tap ty physpath =
 		Hashtbl.add back_tbl "params" (ty ^ ":" ^ physpath);
@@ -465,7 +475,7 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable ~dis
 	in
 
 	debug "Device.Vbd.add (virtpath=%s | physpath=%s | phystype=%s)"
-	  virtpath physpath (string_of_physty phystype);
+	  diskinfo.virtpath diskinfo.physpath (string_of_physty diskinfo.phystype);
 	(* Notes:
 	   1. qemu accesses devices images itself and so needs the path of the original
               file (in params)
@@ -476,33 +486,33 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable ~dis
 	   4. in the future an HVM guest might support a mixture of both
 	*)
 
-	(match extra_backend_keys with
+	(match diskinfo.extra_backend_keys with
 	 | Some keys ->
 	     List.iter (fun (k, v) -> Hashtbl.add back_tbl k v) keys
 	 | None -> ());
 
 	let frontend = { domid = domid; kind = Vbd; devid = devid } in
 
-	let backend_ty, backend = match phystype with
+	let backend_ty, backend = match diskinfo.phystype with
 	| File ->
 		(* Note: qemu access device images itself, so requires the path
 		   of the original file or block device. CDROM media change is achieved
 		   by changing the path in xenstore. Only PV guests need the loopback *)
-		let backend_ty, backend = backend_blk "file" physpath in
+		let backend_ty, backend = backend_blk "file" diskinfo.physpath in
 		if not(hvm) then begin
 		  let device = { backend = backend; frontend = frontend } in
-		  let loopdev = Hotplug.mount_loopdev ~xs device physpath (mode = ReadOnly) in
+		  let loopdev = Hotplug.mount_loopdev ~xs device diskinfo.physpath (diskinfo.mode = ReadOnly) in
 		  Hashtbl.add back_tbl "physical-device" (string_of_major_minor loopdev);
 		  Hashtbl.add back_tbl "loop-device" loopdev;
 		end;
 		backend_ty, backend
 	| Phys ->
-		Hashtbl.add back_tbl "physical-device" (string_of_major_minor physpath);
-		if diskinfo_pt then
-			add_disk_info back_tbl physpath;
-		backend_blk "raw" physpath
+		Hashtbl.add back_tbl "physical-device" (string_of_major_minor diskinfo.physpath);
+		if diskinfo.info_pt then
+			add_disk_info back_tbl diskinfo.physpath;
+		backend_blk "raw" diskinfo.physpath
 	| Qcow | Vhd | Aio ->
-		backend_tap (string_of_physty phystype) physpath
+		backend_tap (string_of_physty diskinfo.phystype) diskinfo.physpath
 		in
 
 	let device = { backend = backend; frontend = frontend } in
@@ -512,19 +522,19 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable ~dis
 		"backend-id", string_of_int backend_domid;
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 		"virtual-device", string_of_int devid;
-		"device-type", if dev_type = CDROM then "cdrom" else "disk";
+		"device-type", if diskinfo.dev_type = CDROM then "cdrom" else "disk";
 	];
 	Hashtbl.add_list back_tbl [
 		"frontend-id", sprintf "%u" domid;
 		(* Prevents the backend hotplug scripts from running if the frontend disconnects.
 		   This allows the xenbus connection to re-establish itself *)
 		"online", "1";
-		"removable", if unpluggable then "1" else "0";
+		"removable", if diskinfo.unpluggable then "1" else "0";
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 		(* HACK qemu wants a /dev/ in the dev field to find the device *)
-		"dev", (if domid = 0 && virtpath.[0] = 'x' then "/dev/" else "") ^ virtpath;
-		"type", backendty_of_physty phystype;
-		"mode", string_of_mode mode;
+		"dev", (if domid = 0 && diskinfo.virtpath.[0] = 'x' then "/dev/" else "") ^ diskinfo.virtpath;
+		"type", backendty_of_physty diskinfo.phystype;
+		"mode", string_of_mode diskinfo.mode;
 	];
 	if protocol <> Protocol_Native then
 		Hashtbl.add front_tbl "protocol" (string_of_protocol protocol);
@@ -554,6 +564,15 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable ~dis
 	    raise e
 	end;
 	device
+
+(* for compat *)
+let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable ~diskinfo_pt
+        ?protocol ?extra_backend_keys ?backend_domid domid =
+	let diskinfo = {
+		mode = mode; virtpath = virtpath; phystype = phystype; physpath = physpath;
+		dev_type = dev_type; unpluggable = unpluggable;
+		info_pt = diskinfo_pt; extra_backend_keys = extra_backend_keys } in
+	add_struct ~xs ~hvm ?protocol ?backend_domid diskinfo domid
 
 let qemu_media_change ~xs ~virtpath domid _type params =
 	let devid = device_number virtpath in
