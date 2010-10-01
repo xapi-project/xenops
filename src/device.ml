@@ -641,6 +641,14 @@ end
 
 module Vif = struct
 
+type info = {
+	vifid: int; (* devid *)
+	netty: Netman.netty;
+	mac: string;
+	mtu: int option;
+	rate: (int64 * int64) option;
+}
+
 exception Invalid_Mac of string
 
 let check_mac mac =
@@ -674,18 +682,17 @@ let plug ~xs ~netty ~mac ?(mtu=0) ?rate ?protocol (x: device) =
 
 	x
 
-
-let add ~xs ~devid ~netty ~mac ?mtu ?(rate=None) ?(protocol=Protocol_Native) ?(backend_domid=0) domid =
-	debug "Device.Vif.add domid=%d devid=%d mac=%s rate=%s" domid devid mac
-	      (match rate with None -> "none" | Some (a, b) -> sprintf "(%Ld,%Ld)" a b);
-	let frontend = { domid = domid; kind = Vif; devid = devid } in
-	let backend = { domid = backend_domid; kind = Vif; devid = devid } in
+let add_struct ~xs ?(protocol=Protocol_Native) ?(backend_domid=0) vifinfo domid =
+	debug "Device.Vif.add domid=%d devid=%d mac=%s rate=%s" domid vifinfo.vifid vifinfo.mac
+	      (match vifinfo.rate with None -> "none" | Some (a, b) -> sprintf "(%Ld,%Ld)" a b);
+	let frontend = { domid = domid; kind = Vif; devid = vifinfo.vifid } in
+	let backend = { domid = backend_domid; kind = Vif; devid = vifinfo.vifid } in
 	let device = { backend = backend; frontend = frontend } in
 
-	let mac = check_mac mac in
+	let mac = check_mac vifinfo.mac in
 
 	let back_options =
-		match rate with
+		match vifinfo.rate with
 		| None                              -> []
 		| Some (kbytes_per_s, timeslice_us) ->
 			let (^*) = Int64.mul and (^/) = Int64.div in
@@ -710,7 +717,7 @@ let add ~xs ~devid ~netty ~mac ?mtu ?(rate=None) ?(protocol=Protocol_Native) ?(b
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 		"script", "/etc/xensource/scripts/vif";
 		"mac", mac;
-		"handle", string_of_int devid
+		"handle", string_of_int vifinfo.vifid
 	] @ back_options in
 
 	let front_options =
@@ -722,14 +729,18 @@ let add ~xs ~devid ~netty ~mac ?mtu ?(rate=None) ?(protocol=Protocol_Native) ?(b
 	let front = [
 		"backend-id", string_of_int backend_domid;
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
-		"handle", string_of_int devid;
+		"handle", string_of_int vifinfo.vifid;
 		"mac", mac;
 	] @ front_options in
 
 
 	Generic.add_device ~xs device back front;
 	Hotplug.wait_for_plug ~xs device;
-	plug ~xs ~netty ~mac ?rate ?mtu device
+	plug ~xs ~netty:vifinfo.netty ~mac ~rate:vifinfo.rate ?mtu:vifinfo.mtu device
+
+let add ~xs ~devid ~netty ~mac ?mtu ?(rate=None) ?(protocol=Protocol_Native) ?(backend_domid=0) domid =
+	let vifinfo = { vifid = devid; netty = netty; mac = mac; mtu = mtu; rate = rate; } in
+	add_struct ~xs ~protocol ~backend_domid vifinfo domid
 
 (** When hot-unplugging a device we ask nicely *)
 let request_closure ~xs (x: device) =

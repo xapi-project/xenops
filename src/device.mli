@@ -100,8 +100,21 @@ end
 (** Virtual network interface *)
 module Vif :
 sig
+	type info = {
+		vifid: int; (* devid *)
+		netty: Netman.netty;
+		mac: string;
+		mtu: int option;
+		rate: (int64 * int64) option;
+	}
+
 	exception Invalid_Mac of string
 	val get_backend_dev : xs:Xs.xsh -> device -> string
+	val add_struct : xs:Xs.xsh
+	              -> ?protocol:protocol
+	              -> ?backend_domid:Xc.domid
+	              -> info -> Xc.domid
+	              -> device
 	val add : xs:Xs.xsh -> devid:int -> netty:Netman.netty
 	       -> mac:string -> ?mtu:int -> ?rate:(int64 * int64) option
 	       -> ?protocol:protocol -> ?backend_domid:Xc.domid -> Xc.domid
