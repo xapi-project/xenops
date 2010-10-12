@@ -152,11 +152,43 @@ let list_devices_between ~xs driver_domid user_domid =
        ) kinds
     )
 
-  
+(** remove duplicate entries from list *)
+let nub xs =
+	let rec aux xs ys =
+		match xs with
+		| []      -> List.rev ys
+		| (x::xs) ->
+			  if List.mem x ys
+			  then aux xs ys
+			  else aux xs (x::ys)
+	in
+	aux xs []
+
+(** Return a list of devices used by domain *)
+let list_devices_for ~xs user_domid =
+	let devs_path = xs.Xs.getdomainpath user_domid ^ "/device" in
+	let kinds = try xs.Xs.directory devs_path with _ -> [] in
+	let kinds = List.concat 
+		(List.map 
+			 (fun k -> 
+				  try [ kind_of_string k ]
+				  with Unknown_device_type _ ->
+					  debug "Ignoring unknown backend device type: %s" k;
+					  []) kinds) in
+	let backend_id_from_kind k =
+		let dir = sprintf "%s/%s" devs_path (string_of_kind k) in
+		let devids = try xs.Xs.directory dir with _ -> [] in
+		let of_devid id =
+			let p = dir ^ "/" ^ id ^ "/backend-id" in
+			let id_str = try xs.Xs.read p with _ -> "0" in
+			int_of_string id_str
+		in
+		List.map of_devid devids in
+	let backend_domids = nub (0 :: List.concat (List.map backend_id_from_kind kinds)) in
+	List.concat (List.map (fun bid -> list_devices_between xs bid user_domid) backend_domids)
 
 let print_device domid kind devid =
        sprintf "(domid=%d | kind=%s | devid=%s)" domid kind devid
-
 
 type protocol = Protocol_Native | Protocol_X86_32 | Protocol_X86_64
 

@@ -54,6 +54,8 @@ val kind_of_string : string -> kind
 (** Return a list of devices connecting two domains. Ignore those whose kind 
     we don't recognise *)
 val list_devices_between : xs:Xs.xsh -> Xc.domid -> Xc.domid -> device list
+(** Return a list of devices used by domain *)
+val list_devices_for : xs:Xs.xsh -> Xc.domid -> device list
 
 val device_of_backend : endpoint -> Xc.domid -> device
 

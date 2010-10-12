@@ -270,7 +270,7 @@ let hard_shutdown_all_vbds ~xc ~xs ?(extra_debug_paths = []) (devices: device li
 let destroy ?(preserve_xs_vm=false) ~xc ~xs domid =
 	let dom_path = xs.Xs.getdomainpath domid in
 
-	let all_devices = list_devices_between ~xs 0 domid in
+	let all_devices = list_devices_for ~xs domid in
 	debug "Domain.destroy: all known devices = [ %a ]" (fun () -> String.concat "; ")
           (List.map string_of_device all_devices);
 
