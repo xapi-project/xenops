@@ -16,9 +16,6 @@
  *)
 open Device_common
 
-exception Ioemu_failed of string
-exception Ioemu_failed_dying
-
 module Generic :
 sig
 	val rm_device_state : xs:Xs.xsh -> device -> unit
@@ -54,6 +51,23 @@ sig
 	val device_major_minor : string -> int * int
 	val major_minor_to_device : int * int -> string
 
+	type info = {
+		mode: mode;
+		virtpath: string;
+		phystype: physty;
+		physpath: string;
+		dev_type: devty;
+		unpluggable: bool;
+		info_pt: bool;
+		extra_backend_keys: (string*string) list option;
+	}
+
+	val add_struct : xs:Xs.xsh -> hvm:bool
+	              -> ?protocol:protocol
+	              -> ?backend_domid:Xc.domid
+	              -> info -> Xc.domid
+	              -> device
+
 	val add : xs:Xs.xsh -> hvm:bool -> mode:mode
 	       -> virtpath:string -> phystype:physty -> physpath:string
 	       -> dev_type:devty
@@ -83,8 +97,21 @@ end
 (** Virtual network interface *)
 module Vif :
 sig
+	type info = {
+		vifid: int; (* devid *)
+		netty: Netman.netty;
+		mac: string;
+		mtu: int option;
+		rate: (int64 * int64) option;
+	}
+
 	exception Invalid_Mac of string
 	val get_backend_dev : xs:Xs.xsh -> device -> string
+	val add_struct : xs:Xs.xsh
+	              -> ?protocol:protocol
+	              -> ?backend_domid:Xc.domid
+	              -> info -> Xc.domid
+	              -> device
 	val add : xs:Xs.xsh -> devid:int -> netty:Netman.netty
 	       -> mac:string -> ?mtu:int -> ?rate:(int64 * int64) option
 	       -> ?protocol:protocol -> ?backend_domid:Xc.domid -> Xc.domid
@@ -179,43 +206,9 @@ sig
 	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> Xc.domid -> unit
 end
 
-module Dm :
+module Console :
 sig
-	type disp_opt =
-		| NONE
-		| VNC of bool * string * int * string (* auto-allocate, bind address, port it !autoallocate, keymap *)
-		| SDL of string (* X11 display *)
-
-	type info = {
-		hvm: bool;
-		memory: int64;
-		boot: string;
-		serial: string;
-		vcpus: int;
-		usb: string list;
-		nics: (string * string * string option * bool) list;
-		acpi: bool;
-		disp: disp_opt;
-		pci_emulations: string list;
-		sound: string option;
-		power_mgmt: int;
-		oem_features: int;
-                inject_sci: int;
-		videoram: int;
-		extras: (string * string option) list;
-	}
-
-	val write_logfile_to_log : int -> unit
-	val unlink_logfile : int -> unit
-
-	val vnc_port_path : Xc.domid -> string
-
-	val signal : xs:Xs.xsh -> domid:Xc.domid -> ?wait_for:string -> ?param:string
-	          -> string -> unit
-
-	val start : xs:Xs.xsh -> dmpath:string -> ?timeout:float -> info -> Xc.domid -> int
-	val restore : xs:Xs.xsh -> dmpath:string -> ?timeout:float -> info -> Xc.domid -> int
-	val suspend : xs:Xs.xsh -> Xc.domid -> unit
-	val resume : xs:Xs.xsh -> Xc.domid -> unit
-	val stop : xs:Xs.xsh -> Xc.domid -> int -> unit
+	type consback = XenConsoled | Ioemu
+	val add : xs:Xs.xsh -> hvm:bool -> ?protocol:protocol -> ?backend_domid:Xc.domid
+               -> output:string -> consback:consback -> devid:int -> Xc.domid -> unit
 end

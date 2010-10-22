@@ -23,14 +23,8 @@ open Listext
 
 open Device_common
 
-exception Ioemu_failed of string
-exception Ioemu_failed_dying
-
 module D = Debug.Debugger(struct let name = "xenops" end)
 open D
-
-let qemu_dm_ready_timeout = 60. *. 20. (* seconds *)
-let qemu_dm_shutdown_timeout = 60. *. 20. (* seconds *)
 
 (****************************************************************************************)
 
@@ -445,15 +439,25 @@ let add_disk_info back_tbl physpath =
 		)
 	with e ->
 		warn "Caught exception during SCSI inquiry: %s" (Printexc.to_string e)
-	
+
+type info = {
+	mode: mode;
+	virtpath: string;
+	phystype: physty;
+	physpath: string;
+	dev_type: devty;
+	unpluggable: bool;
+	info_pt: bool;
+	extra_backend_keys: (string*string) list option;
+}
+
 (* Add the VBD to the domain, taking care of allocating any resources (specifically
    loopback mounts). When this command returns, the device is ready. (This isn't as
    concurrent as xend-- xend allocates loopdevices via hotplug in parallel and then
    performs a 'waitForDevices') *)
-let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable ~diskinfo_pt
-        ?(protocol=Protocol_Native) ?extra_backend_keys ?(backend_domid=0) domid  =
+let add_struct ~xs ~hvm ?(protocol=Protocol_Native) ?(backend_domid=0) diskinfo domid  =
 	let back_tbl = Hashtbl.create 16 and front_tbl = Hashtbl.create 16 in
-	let devid = device_number virtpath in
+	let devid = device_number diskinfo.virtpath in
 
 	let backend_tap ty physpath =
 		Hashtbl.add back_tbl "params" (ty ^ ":" ^ physpath);
@@ -465,7 +469,7 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable ~dis
 	in
 
 	debug "Device.Vbd.add (virtpath=%s | physpath=%s | phystype=%s)"
-	  virtpath physpath (string_of_physty phystype);
+	  diskinfo.virtpath diskinfo.physpath (string_of_physty diskinfo.phystype);
 	(* Notes:
 	   1. qemu accesses devices images itself and so needs the path of the original
               file (in params)
@@ -476,33 +480,33 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable ~dis
 	   4. in the future an HVM guest might support a mixture of both
 	*)
 
-	(match extra_backend_keys with
+	(match diskinfo.extra_backend_keys with
 	 | Some keys ->
 	     List.iter (fun (k, v) -> Hashtbl.add back_tbl k v) keys
 	 | None -> ());
 
 	let frontend = { domid = domid; kind = Vbd; devid = devid } in
 
-	let backend_ty, backend = match phystype with
+	let backend_ty, backend = match diskinfo.phystype with
 	| File ->
 		(* Note: qemu access device images itself, so requires the path
 		   of the original file or block device. CDROM media change is achieved
 		   by changing the path in xenstore. Only PV guests need the loopback *)
-		let backend_ty, backend = backend_blk "file" physpath in
+		let backend_ty, backend = backend_blk "file" diskinfo.physpath in
 		if not(hvm) then begin
 		  let device = { backend = backend; frontend = frontend } in
-		  let loopdev = Hotplug.mount_loopdev ~xs device physpath (mode = ReadOnly) in
+		  let loopdev = Hotplug.mount_loopdev ~xs device diskinfo.physpath (diskinfo.mode = ReadOnly) in
 		  Hashtbl.add back_tbl "physical-device" (string_of_major_minor loopdev);
 		  Hashtbl.add back_tbl "loop-device" loopdev;
 		end;
 		backend_ty, backend
 	| Phys ->
-		Hashtbl.add back_tbl "physical-device" (string_of_major_minor physpath);
-		if diskinfo_pt then
-			add_disk_info back_tbl physpath;
-		backend_blk "raw" physpath
+		Hashtbl.add back_tbl "physical-device" (string_of_major_minor diskinfo.physpath);
+		if diskinfo.info_pt then
+			add_disk_info back_tbl diskinfo.physpath;
+		backend_blk "raw" diskinfo.physpath
 	| Qcow | Vhd | Aio ->
-		backend_tap (string_of_physty phystype) physpath
+		backend_tap (string_of_physty diskinfo.phystype) diskinfo.physpath
 		in
 
 	let device = { backend = backend; frontend = frontend } in
@@ -512,19 +516,19 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable ~dis
 		"backend-id", string_of_int backend_domid;
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 		"virtual-device", string_of_int devid;
-		"device-type", if dev_type = CDROM then "cdrom" else "disk";
+		"device-type", if diskinfo.dev_type = CDROM then "cdrom" else "disk";
 	];
 	Hashtbl.add_list back_tbl [
 		"frontend-id", sprintf "%u" domid;
 		(* Prevents the backend hotplug scripts from running if the frontend disconnects.
 		   This allows the xenbus connection to re-establish itself *)
 		"online", "1";
-		"removable", if unpluggable then "1" else "0";
+		"removable", if diskinfo.unpluggable then "1" else "0";
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 		(* HACK qemu wants a /dev/ in the dev field to find the device *)
-		"dev", (if domid = 0 && virtpath.[0] = 'x' then "/dev/" else "") ^ virtpath;
-		"type", backendty_of_physty phystype;
-		"mode", string_of_mode mode;
+		"dev", (if domid = 0 && diskinfo.virtpath.[0] = 'x' then "/dev/" else "") ^ diskinfo.virtpath;
+		"type", backendty_of_physty diskinfo.phystype;
+		"mode", string_of_mode diskinfo.mode;
 	];
 	if protocol <> Protocol_Native then
 		Hashtbl.add front_tbl "protocol" (string_of_protocol protocol);
@@ -554,6 +558,15 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable ~dis
 	    raise e
 	end;
 	device
+
+(* for compat *)
+let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable ~diskinfo_pt
+        ?protocol ?extra_backend_keys ?backend_domid domid =
+	let diskinfo = {
+		mode = mode; virtpath = virtpath; phystype = phystype; physpath = physpath;
+		dev_type = dev_type; unpluggable = unpluggable;
+		info_pt = diskinfo_pt; extra_backend_keys = extra_backend_keys } in
+	add_struct ~xs ~hvm ?protocol ?backend_domid diskinfo domid
 
 let qemu_media_change ~xs ~virtpath domid _type params =
 	let devid = device_number virtpath in
@@ -622,6 +635,14 @@ end
 
 module Vif = struct
 
+type info = {
+	vifid: int; (* devid *)
+	netty: Netman.netty;
+	mac: string;
+	mtu: int option;
+	rate: (int64 * int64) option;
+}
+
 exception Invalid_Mac of string
 
 let check_mac mac =
@@ -655,18 +676,17 @@ let plug ~xs ~netty ~mac ?(mtu=0) ?rate ?protocol (x: device) =
 
 	x
 
-
-let add ~xs ~devid ~netty ~mac ?mtu ?(rate=None) ?(protocol=Protocol_Native) ?(backend_domid=0) domid =
-	debug "Device.Vif.add domid=%d devid=%d mac=%s rate=%s" domid devid mac
-	      (match rate with None -> "none" | Some (a, b) -> sprintf "(%Ld,%Ld)" a b);
-	let frontend = { domid = domid; kind = Vif; devid = devid } in
-	let backend = { domid = backend_domid; kind = Vif; devid = devid } in
+let add_struct ~xs ?(protocol=Protocol_Native) ?(backend_domid=0) vifinfo domid =
+	debug "Device.Vif.add domid=%d devid=%d mac=%s rate=%s" domid vifinfo.vifid vifinfo.mac
+	      (match vifinfo.rate with None -> "none" | Some (a, b) -> sprintf "(%Ld,%Ld)" a b);
+	let frontend = { domid = domid; kind = Vif; devid = vifinfo.vifid } in
+	let backend = { domid = backend_domid; kind = Vif; devid = vifinfo.vifid } in
 	let device = { backend = backend; frontend = frontend } in
 
-	let mac = check_mac mac in
+	let mac = check_mac vifinfo.mac in
 
 	let back_options =
-		match rate with
+		match vifinfo.rate with
 		| None                              -> []
 		| Some (kbytes_per_s, timeslice_us) ->
 			let (^*) = Int64.mul and (^/) = Int64.div in
@@ -691,7 +711,7 @@ let add ~xs ~devid ~netty ~mac ?mtu ?(rate=None) ?(protocol=Protocol_Native) ?(b
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 		"script", "/etc/xensource/scripts/vif";
 		"mac", mac;
-		"handle", string_of_int devid
+		"handle", string_of_int vifinfo.vifid
 	] @ back_options in
 
 	let front_options =
@@ -703,14 +723,17 @@ let add ~xs ~devid ~netty ~mac ?mtu ?(rate=None) ?(protocol=Protocol_Native) ?(b
 	let front = [
 		"backend-id", string_of_int backend_domid;
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
-		"handle", string_of_int devid;
+		"handle", string_of_int vifinfo.vifid;
 		"mac", mac;
 	] @ front_options in
 
-
 	Generic.add_device ~xs device back front;
 	Hotplug.wait_for_plug ~xs device;
-	plug ~xs ~netty ~mac ?rate ?mtu device
+	plug ~xs ~netty:vifinfo.netty ~mac ~rate:vifinfo.rate ?mtu:vifinfo.mtu device
+
+let add ~xs ~devid ~netty ~mac ?mtu ?(rate=None) ?(protocol=Protocol_Native) ?(backend_domid=0) domid =
+	let vifinfo = { vifid = devid; netty = netty; mac = mac; mtu = mtu; rate = rate; } in
+	add_struct ~xs ~protocol ~backend_domid vifinfo domid
 
 (** When hot-unplugging a device we ask nicely *)
 let request_closure ~xs (x: device) =
@@ -1342,6 +1365,51 @@ let clean_shutdown ~xs (x: device) =
 	()
 end
 
+module Console = struct
+
+type consback = XenConsoled | Ioemu
+exception Invalid_console_type
+
+let add ~xs ~hvm ?(protocol=Protocol_Native) ?(backend_domid=0) ~output ~consback ~devid domid =
+	debug "Device.Console.add %d" domid;
+	if not hvm && consback == Ioemu
+		then raise Invalid_console_type;
+
+	let frontend = { domid = domid; kind = Console; devid = devid } in
+	let backend = { domid = 0; kind = Console; devid = devid } in
+	let device = { backend = backend; frontend = frontend } in
+
+	let back = [
+		"frontend-id", sprintf "%u" domid;
+		"online", "1";
+		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
+		"domain", "some name";
+		"protocol", "vt100";
+	] in
+	(* with devid == 0 add to console not device/console *)
+	let front = if devid > 0 then
+	[
+		"backend-id", string_of_int backend_domid;
+		"protocol", (string_of_protocol protocol);
+		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
+		"limit", "0";
+		"protocol", "vt100";
+		"type", if consback = XenConsoled then "xenconsoled" else "ioemu";
+		"output", output;
+	] else [] in
+	Generic.add_device ~xs device back front;
+	()
+
+let hard_shutdown ~xs (x: device) =
+	debug "Device.Console.hard_shutdown %s" (string_of_device x);
+	()
+
+let clean_shutdown ~xs (x: device) =
+	debug "Device.Console.clean_shutdown %s" (string_of_device x);
+	()
+
+end
+
 let hard_shutdown ~xs (x: device) = match (x.backend.kind, x.frontend.kind) with
   | Vif,_ -> Vif.hard_shutdown ~xs x
   | Vwif,_ -> Vwif.hard_shutdown ~xs x
@@ -1351,6 +1419,7 @@ let hard_shutdown ~xs (x: device) = match (x.backend.kind, x.frontend.kind) with
   | Vfb,_ -> Vfb.hard_shutdown ~xs x
   | Vkb,_ -> Vkb.hard_shutdown ~xs x
   | V4V,_ -> V4V.hard_shutdown ~xs x
+  | Console,_ -> Console.hard_shutdown ~xs x
 
 let clean_shutdown ~xs (x: device) = match (x.backend.kind, x.frontend.kind) with
   | Vif,_ -> Vif.clean_shutdown ~xs x
@@ -1361,277 +1430,6 @@ let clean_shutdown ~xs (x: device) = match (x.backend.kind, x.frontend.kind) wit
   | Vfb,_ -> Vfb.clean_shutdown ~xs x
   | Vkb,_ -> Vkb.clean_shutdown ~xs x
   | V4V,_ -> V4V.clean_shutdown ~xs x
+  | Console,_ -> Console.clean_shutdown ~xs x
 
 let can_surprise_remove ~xs (x: device) = Generic.can_surprise_remove ~xs x
-
-module Dm = struct
-
-(* An example one:
- /usr/lib/xen/bin/qemu-dm -d 39 -m 256 -boot cd -serial pty -usb -usbdevice tablet -domain-name bee94ac1-8f97-42e0-bf77-5cb7a6b664ee -net nic,vlan=1,macaddr=00:16:3E:76:CE:44,model=rtl8139 -net tap,vlan=1,bridge=xenbr0 -vnc 39 -k en-us -vnclisten 127.0.0.1
-*)
-
-type disp_opt =
-	| NONE
-	| VNC of bool * string * int * string (* auto-allocate, bind address could be empty, port if auto-allocate false, keymap *)
-	| SDL of string (* X11 display *)
-
-type info = {
-	hvm: bool;
-	memory: int64;
-	boot: string;
-	serial: string;
-	vcpus: int;
-	usb: string list;
-	nics: (string * string * string option * bool) list;
-	acpi: bool;
-	disp: disp_opt;
-	pci_emulations: string list;
-	sound: string option;
-	power_mgmt: int;
-	oem_features: int;
-	inject_sci: int;
-	videoram: int;
-	extras: (string * string option) list;
-}
-
-(* Path to redirect qemu's stdout and stderr *)
-let logfile domid = Printf.sprintf "/tmp/qemu.%d" domid
-
-(* Called when destroying the domain to spool the log to the main debug log *)
-let write_logfile_to_log domid =
-	let logfile = logfile domid in
-	try
-		let fd = Unix.openfile logfile [ Unix.O_RDONLY ] 0o0 in
-		finally
-		  (fun () -> debug "qemu-dm: logfile contents: %s" (Unixext.read_whole_file 1024 1024 fd))
-		  (fun () -> Unix.close fd)
-	with e ->
-		debug "Caught exception reading qemu log file from %s: %s" logfile (Printexc.to_string e);
-		raise e
-
-let unlink_logfile domid = Unix.unlink (logfile domid)
-
-(* Where qemu writes its port number *)
-let vnc_port_path domid = sprintf "/local/domain/%d/console/vnc-port" domid
-
-(* Where qemu writes its state and is signalled *)
-let device_model_path domid = sprintf "/local/domain/0/device-model/%d" domid
-
-let power_mgmt_path domid = sprintf "/local/domain/0/device-model/%d/xen_extended_power_mgmt" domid
-let oem_features_path domid = sprintf "/local/domain/0/device-model/%d/oem_features" domid
-let inject_sci_path domid = sprintf "/local/domain/0/device-model/%d/inject-sci" domid
-
-let signal ~xs ~domid ?wait_for ?param cmd =
-	let cmdpath = device_model_path domid in
-	Xs.transaction xs (fun t ->
-		t.Xst.write (cmdpath ^ "/command") cmd;
-		match param with
-		| None -> ()
-		| Some param -> t.Xst.write (cmdpath ^ "/parameter") param
-	);
-	match wait_for with
-	| Some state ->
-		let pw = cmdpath ^ "/state" in
-		Watch.wait_for ~xs (Watch.value_to_become pw state)
-	| None -> ()
-
-(* Returns the allocated vnc port number *)
-let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
-	let usb' =
-		if info.usb = [] then
-			[]
-		else
-			("-usb" :: (List.concat (List.map (fun device ->
-					   [ "-usbdevice"; device ]) info.usb))) in
-	(* qemu need a different id for every vlan, or things get very bad *)
-	let vlan_id = ref 0 in
-	let if_number = ref 0 in
-	let nics' = List.map (fun (mac, bridge, model, wireless) ->
-		let modelstr =
-			match model with
-			| None   -> "rtl8139"
-			| Some m -> m
-			in
-		let r = [
-		"-net"; sprintf "nic,vlan=%d,macaddr=%s,model=%s" !vlan_id mac modelstr;
-		"-net"; sprintf "tap,vlan=%d,bridge=%s,ifname=%s" !vlan_id bridge (Printf.sprintf "tap%d.%d" domid !if_number)] in
-		incr if_number;
-		incr vlan_id;
-		r
-	) info.nics in
-	let qemu_pid_path = xs.Xs.getdomainpath domid ^ "/qemu-pid" in
-
-	if info.power_mgmt <> 0 then begin
-		try if (Unix.stat "/proc/acpi/battery").Unix.st_kind == Unix.S_DIR then
-				xs.Xs.write (power_mgmt_path domid) (string_of_int info.power_mgmt);
-		with _ -> () ;
-	end;
-
-	if info.oem_features <> 0 then
-		xs.Xs.write (oem_features_path domid) (string_of_int info.oem_features);
-
-	if info.inject_sci <> 0 then
-		xs.Xs.write (inject_sci_path domid) (string_of_int info.inject_sci);
-
-	let log = logfile domid in
-	let restorefile = sprintf "/tmp/xen.qemu-dm.%d" domid in
-	let disp_options, wait_for_port =
-		match info.disp with
-		| NONE                     -> [], false
-		| SDL (x11name)            -> [], false
-		| VNC (auto, bindaddr, port, keymap) ->
-			if auto
-			then [ "-vncunused"; "-k"; keymap ], true
-			else [ "-vnc"; bindaddr ^ ":" ^ string_of_int port; "-k"; keymap ], true
-		in
-	let sound_options =
-		match info.sound with
-		| None        -> []
-		| Some device -> [ "-soundhw"; device ]
-		in
-
-	let l = [ string_of_int domid; (* absorbed by qemu-dm-wrapper *)
-		  log;                 (* absorbed by qemu-dm-wrapper *)
-		  (* everything else goes straight through to qemu-dm: *)
-		  "-d"; string_of_int domid;
-		  "-m"; Int64.to_string (Int64.div info.memory 1024L);
-		  "-boot"; info.boot;
-		  "-serial"; info.serial;
-		  "-vcpus"; string_of_int info.vcpus;
-	          "-videoram"; string_of_int info.videoram;
-	          "-M"; (if info.hvm then "xenfv" else "xenpv");
-	]
-	   @ disp_options @ sound_options @ usb' @ (List.concat nics')
-	   @ (if info.acpi then [ "-acpi" ] else [])
-	   @ (if restore then [ "-loadvm"; restorefile ] else [])
-	   @ (List.fold_left (fun l pci -> "-pciemulation" :: pci :: l) [] (List.rev info.pci_emulations))
-	   @ (List.fold_left (fun l (k, v) -> ("-" ^ k) :: (match v with None -> l | Some v -> v :: l)) [] info.extras)
-		in
-	(* Now add the close fds wrapper *)
-	let cmdline = Forkhelpers.close_and_exec_cmdline [] dmpath l in
-	debug "qemu-dm: executing commandline: %s" (String.concat " " cmdline);
-
-	let argv_0 = List.hd cmdline and argv = Array.of_list cmdline in
-	Unixext.double_fork (fun () ->
-		Sys.set_signal Sys.sigint Sys.Signal_ignore;
-
-		Unix.execvp argv_0 argv
-	);
-	debug "qemu-dm: should be running in the background (stdout and stderr redirected to %s)" log;
-
-	(* We know qemu is ready (and the domain may be unpaused) when
-	   device-misc/dm-ready is set in the store. See xs-xen.pq.hg:hvm-late-unpause *)
-        let dm_ready = xs.Xs.getdomainpath domid ^ "/device-misc/dm-ready" in
-	begin
-	  try
-	    ignore(Watch.wait_for ~xs ~timeout (Watch.value_to_appear dm_ready))
-	  with Watch.Timeout _ ->
-	    debug "qemu-dm: timeout waiting for %s" dm_ready;
-	    raise (Ioemu_failed ("Timeout waiting for " ^ dm_ready))
-	end;
-
-	(* If the wrapper script didn't write its pid to the store then fail *)
-	let qemu_pid = ref 0 in
-	begin
-	  try
-	    qemu_pid := int_of_string (xs.Xs.read qemu_pid_path);
-	  with _ ->
-	    debug "qemu-dm: Failed to read qemu pid from xenstore (normally written by qemu-dm-wrapper)";
-	    raise (Ioemu_failed "Failed to read qemu-dm pid from xenstore")
-	end;
-	debug "qemu-dm: pid = %d" !qemu_pid;
-
-	(* Verify that qemu still exists at this point (of course it might die anytime) *)
-	let qemu_alive = try Unix.kill !qemu_pid 0; true with _ -> false in
-	if not qemu_alive then
-		raise (Ioemu_failed (Printf.sprintf "The qemu-dm process (pid %d) has vanished" !qemu_pid));
-
-	(* Block waiting for it to write the VNC port into the store *)
-	if wait_for_port then (
-		try
-			let port = Watch.wait_for ~xs (Watch.value_to_appear (vnc_port_path domid)) in
-			debug "qemu-dm: wrote vnc port %s into the store" port;
-			int_of_string port
-		with Watch.Timeout _ ->
-			warn "qemu-dm: Timed out waiting for qemu's VNC server to start";
-			raise (Ioemu_failed (Printf.sprintf "The qemu-dm process (pid %d) failed to write a vnc port" !qemu_pid)) 
-	) else
-		(-1)	
-
-let start ~xs ~dmpath ?timeout info domid = __start ~xs ~restore:false ~dmpath ?timeout info domid
-let restore ~xs ~dmpath ?timeout info domid = __start ~xs ~restore:true ~dmpath ?timeout info domid
-
-
-(* suspend/resume is a done by sending signals to qemu *)
-let suspend ~xs domid = signal ~xs ~domid "save" ~wait_for:"paused"
-let resume ~xs domid = signal ~xs ~domid "continue" ~wait_for:"running"
-
-(* Called by every domain destroy, even non-HVM *)
-let stop ~xs domid signal =
-	let qemu_pid_path = sprintf "/local/domain/%d/qemu-pid" domid in
-	let qemu_pid =
-		try int_of_string (xs.Xs.read qemu_pid_path)
-		with _ -> 0 in
-	if qemu_pid = 0
-	then debug "No qemu-dm pid in xenstore; assuming this domain was PV"
-	else begin
-		debug "qemu-dm: stopping qemu-dm with %s (domid = %d)"
-		  (if signal = Sys.sigterm then "SIGTERM" 
-		   else if signal = Sys.sigusr1 then "SIGUSR1"
-		   else "(unknown)") domid;
-
-		let proc_entry_exists pid =
-			try Unix.access (sprintf "/proc/%d" pid) [ Unix.F_OK ]; true
-			with _ -> false
-			in
-		if proc_entry_exists qemu_pid then (
-			let loop_time_waiting = 0.03 in
-			let left = ref qemu_dm_shutdown_timeout in
-			let readcmdline pid =
-				try Unixext.read_whole_file_to_string (sprintf "/proc/%d/cmdline" pid)
-				with _ -> ""
-				in
-			let reference = readcmdline qemu_pid and quit = ref false in
-			debug "qemu-dm: process is alive so sending signal now (domid %d pid %d)" domid qemu_pid;
-			Unix.kill qemu_pid signal;
-
-			(* We cannot do a waitpid here, since we're not parent of
-			   the ioemu process, so instead we are waiting for the /proc/%d to go
-			   away. Also we verify that the cmdline stay the same if it's still here
-			   to prevent the very very unlikely event that the pid get reused before
-			   we notice it's gone *)
-			while proc_entry_exists qemu_pid && not !quit && !left > 0.
-			do
-				let cmdline = readcmdline qemu_pid in
-				if cmdline = reference then (
-					(* still up, let's sleep a bit *)
-					ignore (Unix.select [] [] [] loop_time_waiting);
-					left := !left -. loop_time_waiting
-				) else (
-					(* not the same, it's gone ! *)
-					quit := true
-				)
-			done;
-			if !left <= 0. then begin
-				debug  "qemu-dm: failed to go away %f seconds after receiving signal (domid %d pid %d)" qemu_dm_shutdown_timeout domid qemu_pid;
-				raise Ioemu_failed_dying
-			end;
-			(try xs.Xs.rm qemu_pid_path with _ -> ());
-			(* best effort to delete the qemu chroot dir; we deliberately want this to fail if the dir is not empty cos it may contain
-			   core files that bugtool will pick up; the xapi init script cleans out this directory with "rm -rf" on boot *)
-			(try Unix.rmdir ("/var/xen/qemu/"^(string_of_int qemu_pid)) with _ -> ())
-		);
-		(try xs.Xs.rm (device_model_path domid) with _ -> ());
-
-		(* Even if it's already dead (especially if it's already dead!) inspect the logfile *)
-		begin try write_logfile_to_log domid
-		with _ ->
-			debug "qemu-dm: error reading stdout/stderr logfile (domid %d pid %d)" domid qemu_pid;
-		end;
-		begin try unlink_logfile domid
-		with _ ->
-			debug "qemu-dm: error unlinking stdout/stderr logfile (domid %d pid %d), already gone?" domid qemu_pid
-		end
-	end
-
-end
