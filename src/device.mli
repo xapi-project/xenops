@@ -174,6 +174,8 @@ sig
 	type dev = {
 		desc: desc;
 		guest_slot: int option;
+		msitranslate: int;
+		power_mgmt: int;
 	}
 
 	val dev_of_string : string -> dev
@@ -185,8 +187,7 @@ sig
 	val passthrough_io : xc:Xc.handle -> Xc.domid -> (int * int) -> bool -> unit
 	val passthrough_mmio : xc:Xc.handle -> Xc.domid -> (int64 * int64) -> bool -> unit
 
-	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> msitranslate:int
-	       -> pci_power_mgmt:int -> ?flrscript:(string option) -> dev list -> Xc.domid -> int -> unit
+	val add : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool -> ?flrscript:(string option) -> dev list -> Xc.domid -> int -> unit
 	val release : xc:Xc.handle -> xs:Xs.xsh -> hvm:bool
 	       -> dev list -> Xc.domid -> int -> unit
 	val reset : xs:Xs.xsh -> device -> unit

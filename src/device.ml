@@ -1004,6 +1004,8 @@ type resources = {
 type dev = {
 	desc: desc;
 	guest_slot: int option;
+	msitranslate: int;
+	power_mgmt: int;
 }
 
 let string_of_desc desc = sprintf "%04x:%02x:%02x.%02x" desc.domain desc.bus desc.slot desc.func
@@ -1017,9 +1019,9 @@ let string_of_dev dev =
 
 let dev_of_string devstr =
 	try
-		Scanf.sscanf devstr "%04x:%02x:%02x.%1x@%02x" (fun a b c d e -> { desc = { domain = a; bus = b; slot = c; func = d }; guest_slot = Some e })
+		Scanf.sscanf devstr "%04x:%02x:%02x.%1x@%02x" (fun a b c d e -> { desc = { domain = a; bus = b; slot = c; func = d }; guest_slot = Some e; msitranslate = 0; power_mgmt = 0 })
 	with _ ->
-		Scanf.sscanf devstr "%04x:%02x:%02x.%1x" (fun a b c d -> { desc = { domain = a; bus = b; slot = c; func = d }; guest_slot = None })
+		Scanf.sscanf devstr "%04x:%02x:%02x.%1x" (fun a b c d -> { desc = { domain = a; bus = b; slot = c; func = d }; guest_slot = None; msitranslate = 0; power_mgmt = 0 })
 
 exception Cannot_add of dev list * exn (* devices, reason *)
 exception Cannot_use_pci_with_no_pciback of (dev * resources) list
@@ -1091,7 +1093,9 @@ let grant_access_resources xc domid resources v =
 		)
 	) resources
 
-let add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?(flrscript=None) pcidevs domid devid =
+let add_noexn ~xc ~xs ~hvm ?(flrscript=None) pcidevs domid devid =
+	let msitranslate = (List.hd pcidevs).msitranslate in
+	let power_mgmt   = (List.hd pcidevs).power_mgmt in
 	let pcidevs = List.map (fun info ->
 		let (irq, memaddr, driver) = get_from_system info.desc in
 		info, { irq = irq; memaddr = memaddr; driver = driver; }
@@ -1128,7 +1132,7 @@ let add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?(flrscript=None) pcide
 		"num_devs", string_of_int (List.length xsdevs);
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 		"msitranslate", string_of_int (msitranslate);
-		"pci_power_mgmt", string_of_int (pci_power_mgmt);
+		"pci_power_mgmt", string_of_int (power_mgmt);
 	] and frontendlist = [
 		"backend-id", "0";
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
@@ -1136,8 +1140,8 @@ let add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?(flrscript=None) pcide
 	Generic.add_device ~xs device (others @ xsdevs @ backendlist) frontendlist;
 	()
 
-let add ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?flrscript pcidevs domid devid =
-	try add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?flrscript pcidevs domid devid
+let add ~xc ~xs ~hvm ?flrscript pcidevs domid devid =
+	try add_noexn ~xc ~xs ~hvm ?flrscript pcidevs domid devid
 	with exn ->
 		raise (Cannot_add (pcidevs, exn))
 
