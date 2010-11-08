@@ -1006,6 +1006,7 @@ type dev = {
 	guest_slot: int option;
 	msitranslate: int;
 	power_mgmt: int;
+	vdevfn: int option;
 }
 
 let string_of_desc desc = sprintf "%04x:%02x:%02x.%02x" desc.domain desc.bus desc.slot desc.func
@@ -1019,9 +1020,9 @@ let string_of_dev dev =
 
 let dev_of_string devstr =
 	try
-		Scanf.sscanf devstr "%04x:%02x:%02x.%1x@%02x" (fun a b c d e -> { desc = { domain = a; bus = b; slot = c; func = d }; guest_slot = Some e; msitranslate = 0; power_mgmt = 0 })
+		Scanf.sscanf devstr "%04x:%02x:%02x.%1x@%02x" (fun a b c d e -> { desc = { domain = a; bus = b; slot = c; func = d }; guest_slot = Some e; msitranslate = 0; power_mgmt = 0; vdevfn = None })
 	with _ ->
-		Scanf.sscanf devstr "%04x:%02x:%02x.%1x" (fun a b c d -> { desc = { domain = a; bus = b; slot = c; func = d }; guest_slot = None; msitranslate = 0; power_mgmt = 0 })
+		Scanf.sscanf devstr "%04x:%02x:%02x.%1x" (fun a b c d -> { desc = { domain = a; bus = b; slot = c; func = d }; guest_slot = None; msitranslate = 0; power_mgmt = 0; vdevfn = None })
 
 exception Cannot_add of dev list * exn (* devices, reason *)
 exception Cannot_use_pci_with_no_pciback of (dev * resources) list
@@ -1123,7 +1124,8 @@ let add_noexn ~xc ~xs ~hvm ?(flrscript=None) pcidevs domid devid =
 
 	let others = (match flrscript with None -> [] | Some script -> [ ("script", script) ]) in
 	let xsdevs = List.mapi (fun i (dev,_) ->
-		sprintf "dev-%d" i, string_of_dev dev
+		[ sprintf "dev-%d" i, string_of_dev dev ] @
+		(match dev.vdevfn with None -> [] | Some n -> [ sprintf "vdevfn-%d" i, string_of_int n ])
 	) pcidevs in
 
 	let backendlist = [
@@ -1137,7 +1139,7 @@ let add_noexn ~xc ~xs ~hvm ?(flrscript=None) pcidevs domid devid =
 		"backend-id", "0";
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 	] in
-	Generic.add_device ~xs device (others @ xsdevs @ backendlist) frontendlist;
+	Generic.add_device ~xs device (others @ List.concat xsdevs @ backendlist) frontendlist;
 	()
 
 let add ~xc ~xs ~hvm ?flrscript pcidevs domid devid =

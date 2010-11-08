@@ -176,6 +176,7 @@ sig
 		guest_slot: int option;
 		msitranslate: int;
 		power_mgmt: int;
+		vdevfn: int option;
 	}
 
 	val dev_of_string : string -> dev
