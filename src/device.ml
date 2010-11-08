@@ -995,34 +995,34 @@ module PCI = struct
 
 type desc = { domain: int; bus: int; slot: int; func: int }
 
-type t = {
-	desc: desc;
+type resources = {
 	irq: int;
-	resources: (int64 * int64 * int64) list;
+	memaddr: (int64 * int64 * int64) list;
 	driver: string;
-	guest_slot: int option;
 }
 
-type dev = desc * int option
+type dev = {
+	desc: desc;
+	guest_slot: int option;
+}
 
 let string_of_desc desc = sprintf "%04x:%02x:%02x.%02x" desc.domain desc.bus desc.slot desc.func
 
 let string_of_dev dev =
-	let (desc, slot_guest) = dev in
-	let at = match slot_guest with
+	let at = match dev.guest_slot with
 	| None -> ""
 	| Some slot -> sprintf "@%02x" slot
 	in
-	string_of_desc desc ^ at
+	string_of_desc dev.desc ^ at
 
 let dev_of_string devstr =
 	try
-		Scanf.sscanf devstr "%04x:%02x:%02x.%1x@%02x" (fun a b c d e -> ({ domain = a; bus = b; slot = c; func = d }, Some e))
+		Scanf.sscanf devstr "%04x:%02x:%02x.%1x@%02x" (fun a b c d e -> { desc = { domain = a; bus = b; slot = c; func = d }; guest_slot = Some e })
 	with _ ->
-		Scanf.sscanf devstr "%04x:%02x:%02x.%1x" (fun a b c d -> ({ domain = a; bus = b; slot = c; func = d }, None))
+		Scanf.sscanf devstr "%04x:%02x:%02x.%1x" (fun a b c d -> { desc = { domain = a; bus = b; slot = c; func = d }; guest_slot = None })
 
 exception Cannot_add of dev list * exn (* devices, reason *)
-exception Cannot_use_pci_with_no_pciback of t list
+exception Cannot_use_pci_with_no_pciback of (dev * resources) list
 
 let get_from_system desc =
 	let map_resource file =
@@ -1092,24 +1092,24 @@ let grant_access_resources xc domid resources v =
 	) resources
 
 let add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?(flrscript=None) pcidevs domid devid =
-	let pcidevs = List.map (fun (desc, guest_slot) ->
-		let (irq, resources, driver) = get_from_system desc in
-		{ desc = desc; irq = irq; resources = resources; driver = driver; guest_slot = guest_slot }
+	let pcidevs = List.map (fun info ->
+		let (irq, memaddr, driver) = get_from_system info.desc in
+		info, { irq = irq; memaddr = memaddr; driver = driver; }
 	) pcidevs in
 
-	let baddevs = List.filter (fun t -> t.driver <> "pciback") pcidevs in
+	let baddevs = List.filter (fun (info, resources) -> resources.driver <> "pciback") pcidevs in
 	if List.length baddevs > 0 then (
 		raise (Cannot_use_pci_with_no_pciback baddevs);
 	);
 
-	List.iter (fun dev ->
+	List.iter (fun (dev, resources) ->
 		if hvm then (
 			ignore_bool (Xc.domain_test_assign_device xc domid (dev.desc.domain, dev.desc.bus, dev.desc.slot, dev.desc.func));
 			()
 		);
-		grant_access_resources xc domid dev.resources true;
-		if dev.irq > 0 then
-			Xc.domain_irq_permission xc domid dev.irq true
+		grant_access_resources xc domid resources.memaddr true;
+		if resources.irq > 0 then
+			Xc.domain_irq_permission xc domid resources.irq true
 	) pcidevs;
 
 	let device = {
@@ -1118,8 +1118,8 @@ let add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?(flrscript=None) pcide
 	} in
 
 	let others = (match flrscript with None -> [] | Some script -> [ ("script", script) ]) in
-	let xsdevs = List.mapi (fun i dev ->
-		sprintf "dev-%d" i, string_of_dev (dev.desc, dev.guest_slot)
+	let xsdevs = List.mapi (fun i (dev,_) ->
+		sprintf "dev-%d" i, string_of_dev dev
 	) pcidevs in
 
 	let backendlist = [
@@ -1142,20 +1142,20 @@ let add ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?flrscript pcidevs domid devi
 		raise (Cannot_add (pcidevs, exn))
 
 let release ~xc ~xs ~hvm pcidevs domid devid =
-	let pcidevs = List.map (fun (desc, guest_slot) ->
-		let (irq, resources, driver) = get_from_system desc in
-		{ desc = desc; irq = irq; resources = resources; driver = driver; guest_slot = guest_slot }
+	let pcidevs = List.map (fun dev ->
+		let (irq, memaddr, driver) = get_from_system dev.desc in
+		dev, { irq = irq; memaddr = memaddr; driver = driver; }
 	) pcidevs in
 
-	let baddevs = List.filter (fun t -> t.driver <> "pciback" && t.driver <> "") pcidevs in
+	let baddevs = List.filter (fun (_, resources) -> resources.driver <> "pciback" && resources.driver <> "") pcidevs in
 	if List.length baddevs > 0 then (
 		raise (Cannot_use_pci_with_no_pciback baddevs);
 	);
 
-	List.iter (fun dev ->
-		grant_access_resources xc domid dev.resources false;
-		if dev.irq > 0 then
-			Xc.domain_irq_permission xc domid dev.irq false
+	List.iter (fun (_, resources) ->
+		grant_access_resources xc domid resources.memaddr false;
+		if resources.irq > 0 then
+			Xc.domain_irq_permission xc domid resources.irq false
 	) pcidevs;
 	()
 
@@ -1182,8 +1182,8 @@ let bind pcidevs =
 		write_string_to_file bind device;
 		do_flr device;
 		in
-	List.iter (fun (desc, _) ->
-		let devstr = string_of_desc desc in
+	List.iter (fun dev ->
+		let devstr = string_of_desc dev.desc in
 		let s = "/sys/bus/pci/devices/" ^ devstr in
 		let driver =
 			try Some (Filename.basename (Unix.readlink (s ^ "/driver")))
@@ -1228,8 +1228,8 @@ let enumerate_devs ~xs (x: device) =
 let reset ~xs (x: device) =
 	debug "Device.Pci.reset %s" (string_of_device x);
 	let pcidevs = enumerate_devs ~xs x in
-	List.iter (fun (desc, _) ->
-		let devstr = string_of_desc desc in
+	List.iter (fun dev ->
+		let devstr = string_of_desc dev.desc in
 		do_flr devstr
 	) pcidevs;
 	()

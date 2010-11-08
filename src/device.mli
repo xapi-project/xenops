@@ -166,20 +166,21 @@ sig
 		slot: int;
 		func: int;
 	}
-	type t = {
-		desc: desc;
+	type resources = {
 		irq: int;
-		resources: (int64 * int64 * int64) list;
+		memaddr: (int64 * int64 * int64) list;
 		driver: string;
+	}
+	type dev = {
+		desc: desc;
 		guest_slot: int option;
 	}
-	type dev = desc * int option
 
 	val dev_of_string : string -> dev
 	val string_of_dev : dev -> string
 
 	exception Cannot_add of (dev list) * exn
-	exception Cannot_use_pci_with_no_pciback of t list
+	exception Cannot_use_pci_with_no_pciback of (dev * resources) list
 
 	val passthrough_io : xc:Xc.handle -> Xc.domid -> (int * int) -> bool -> unit
 	val passthrough_mmio : xc:Xc.handle -> Xc.domid -> (int64 * int64) -> bool -> unit
