@@ -160,17 +160,20 @@ end
 
 module PCI :
 sig
-	type t = {
+	type desc = {
 		domain: int;
 		bus: int;
 		slot: int;
 		func: int;
+	}
+	type t = {
+		desc: desc;
 		irq: int;
 		resources: (int64 * int64 * int64) list;
 		driver: string;
 		guest_slot: int option;
 	}
-	type dev = int * int * int * int * int option
+	type dev = desc * int option
 
 	val dev_of_string : string -> dev
 	val string_of_dev : dev -> string
