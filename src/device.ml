@@ -1009,7 +1009,7 @@ type dev = {
 	vdevfn: int option;
 }
 
-let string_of_desc desc = sprintf "%04x:%02x:%02x.%02x" desc.domain desc.bus desc.slot desc.func
+let string_of_desc desc = sprintf "%04x:%02x:%02x.%1x" desc.domain desc.bus desc.slot desc.func
 
 let string_of_dev dev =
 	let at = match dev.guest_slot with
