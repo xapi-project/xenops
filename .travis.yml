@@ -8,7 +8,7 @@ before_install:
     - wget "http://archive.ubuntu.com/ubuntu/ubuntu/pool/main/s/systemd/libsystemd0_219-7ubuntu3_amd64.deb"
     - wget "http://archive.ubuntu.com/ubuntu/ubuntu/pool/main/s/systemd/libsystemd-dev_219-7ubuntu3_amd64.deb"
     - sudo dpkg -i libsystemd0_219-7ubuntu3_amd64.deb libsystemd-dev_219-7ubuntu3_amd64.deb
-    - git clone https://github.com/xapi-project/xs-opam /tmp/xs-opam && cd /tmp/xs-opam && sh into_repo.sh && cd -
+    - git clone https://github.com/xapi-project/xs-opam /tmp/xs-opam && cd /tmp/xs-opam && sh tools/into_repo.sh && cd -
 install:
   - wget https://raw.githubusercontent.com/ocaml/ocaml-travisci-skeleton/master/.travis-opam.sh
 script:
